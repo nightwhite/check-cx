@@ -1,7 +1,7 @@
 ## 1. OpenSpec and Planning
 
-- [ ] 1.1 Create proposal, design, tasks, and spec deltas for the Workers/Astro/D1 runtime migration.
-- [ ] 1.2 Create `docs/superpowers/plans/2026-05-02-workers-astro-d1-migration.md`.
+- [x] 1.1 Create proposal, design, tasks, and spec deltas for the Workers/Astro/D1 runtime migration.
+- [x] 1.2 Create `docs/superpowers/plans/2026-05-02-workers-astro-d1-migration.md`.
 - [ ] 1.3 Validate with `openspec validate refactor-workers-astro-d1-runtime --strict` when the CLI is available.
 
 ## 2. Worker Skeleton
@@ -28,7 +28,7 @@
 
 - [x] 5.1 Implement job lock acquisition and expiry.
 - [x] 5.2 Implement scheduled health check flow.
-- [x] 5.3 Write `check_history`, `check_latest`, `availability_rollups`, `dashboard_snapshots`, and `job_runs`.
+- [x] 5.3 Load D1 configs, decrypt provider keys, run checks with bounded concurrency, and write `check_history`, `check_latest`, `availability_rollups`, dashboard/group `dashboard_snapshots`, `job_runs`, and history pruning.
 - [ ] 5.4 Verify scheduled smoke test and overlapping job behavior.
 
 ## 6. Hono API Compatibility
@@ -49,12 +49,12 @@
 
 - [x] 8.1 Add Supabase export, D1 import, and provider key encryption scripts.
 - [x] 8.2 Convert UUID, JSONB, timestamptz, enum, and API key fields.
-- [ ] 8.3 Migrate the latest state and the last 30 days of history.
+- [x] 8.3 Migrate the last 30 days of history and derive `check_latest` from imported history.
 - [ ] 8.4 Verify counts, relationships, and absence of plaintext API keys.
 
 ## 9. Verification and Cutover
 
-- [ ] 9.1 Add API contract verification script and Workers migration checklist.
-- [ ] 9.2 Verify no request-triggered health checks, business `setInterval`, floating promises, or hardcoded secrets.
-- [ ] 9.3 Add cutover runbook with D1 creation, secrets, migrations, data import, Cron, route switch, and rollback.
-- [ ] 9.4 Run final build, lint, types, D1 local migration, and dry-run deploy.
+- [x] 9.1 Add API contract verification script and Workers migration checklist.
+- [x] 9.2 Verify no request-triggered health checks, business `setInterval`, floating promises, or hardcoded secrets.
+- [x] 9.3 Add cutover runbook with D1 creation, secrets, migrations, data import, Cron, route switch, and rollback.
+- [x] 9.4 Run final build, lint, types, D1 local migration, and dry-run deploy.

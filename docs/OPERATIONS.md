@@ -327,3 +327,79 @@ SELECT prune_check_history(30);
 
 - 确认每个节点 `CHECK_NODE_ID` 唯一。
 - 检查 `check_poller_leases` 是否可写（需 service role key）。
+
+## 8. Workers + D1 运行模式
+
+迁移到 Cloudflare Workers 后，生产入口从 Next.js runtime 切到 `src/worker/index.ts`：
+
+- Astro 负责输出静态单页 shell。
+- React island 负责 Dashboard 交互。
+- Hono 负责 `/api/*` 只读 API。
+- D1 存储配置、历史、latest、rollups、snapshots、job runs。
+- Cron Trigger 是唯一健康检查调度来源。
+
+### 8.1 必需配置
+
+`wrangler.jsonc` 必须使用真实 D1：
+
+```jsonc
+{
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "check-cx",
+      "database_id": "<REAL_D1_DATABASE_ID>",
+      "migrations_dir": "drizzle/migrations"
+    }
+  ]
+}
+```
+
+Provider key 解密密钥只允许通过 Wrangler Secret 注入：
+
+```bash
+corepack pnpm exec wrangler secret put CONFIG_ENCRYPTION_KEY
+```
+
+### 8.2 D1 迁移与导入
+
+```bash
+corepack pnpm exec wrangler d1 migrations apply DB --local
+corepack pnpm exec wrangler d1 migrations apply DB --remote
+```
+
+Supabase 到 D1 数据迁移参考：
+
+- `scripts/migration/README.md`
+- `docs/cutover/workers-d1-cutover.md`
+
+### 8.3 Cron 观测
+
+Cron 每分钟执行一次。检查最近运行：
+
+```bash
+corepack pnpm exec wrangler d1 execute DB --remote --command "SELECT status, checked_count, started_at_ms, finished_at_ms, error_message FROM job_runs ORDER BY started_at_ms DESC LIMIT 10;"
+```
+
+如果连续 `failed`：
+
+1. 检查 `CONFIG_ENCRYPTION_KEY` 是否缺失或与迁移时不一致。
+2. 检查 `check_configs` 中非维护配置是否存在 `api_key_ciphertext` 和 `api_key_nonce`。
+3. 检查 provider endpoint 是否可从 Workers 访问。
+4. 查看 Workers Observability 中的 D1 和 fetch 错误。
+
+### 8.4 Snapshot API
+
+Dashboard 和 group API 只读 `dashboard_snapshots`：
+
+```bash
+curl -sS "https://<domain>/api/dashboard?trendPeriod=7d"
+curl -sS "https://<domain>/api/v1/status?group=&model="
+```
+
+如果 Dashboard 为空：
+
+- 确认 `job_runs` 最近成功。
+- 确认 `check_latest` 有数据。
+- 确认 `dashboard_snapshots` 有 `snapshot_key = 'dashboard'`。
+- 分组页需要 `snapshot_key = 'group:<groupName>'`。

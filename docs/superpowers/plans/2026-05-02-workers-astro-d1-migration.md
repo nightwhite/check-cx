@@ -102,7 +102,8 @@
 
 - [x] 实现 job lock。
 - [x] 实现 `scheduled()` health check flow。
-- [x] 写入 history、latest、rollups、snapshots、job runs。
+- [x] 从 D1 加载启用配置、解密 provider key，并使用有界并发执行检查。
+- [x] 写入 history、latest、rollups、dashboard/group snapshots、job runs，并裁剪旧 history。
 - [ ] 验证 scheduled smoke test 和重叠 job 行为。
 
 ### 任务 5：实现 Hono API 兼容层
@@ -131,23 +132,23 @@
 
 - [x] 添加 Supabase export、D1 import、provider key encryption scripts。
 - [x] 转换 UUID、JSONB、timestamptz、enum 和 API key。
-- [ ] 迁移 latest 和最近 30 天历史。
+- [x] 迁移最近 30 天历史，并从历史记录派生 `check_latest`。
 - [ ] 验证数量、关系和无明文 API key。
 
 ### 任务 8：性能、稳定性、安全验证
 
 **使用 skills：** `verification-before-completion`、`cloudflare:web-perf`、`requesting-code-review`
 
-- [ ] 添加 API contract verification script。
-- [ ] 添加 Workers migration checklist。
-- [ ] 检查无 request-triggered health check、业务 `setInterval`、floating promises、hardcoded secrets。
-- [ ] 运行最终验证命令。
+- [x] 添加 API contract verification script。
+- [x] 添加 Workers migration checklist。
+- [x] 检查无 request-triggered health check、业务 `setInterval`、floating promises、hardcoded secrets。
+- [x] 运行最终验证命令。
 
 ### 任务 9：并行运行和切流
 
 **使用 skills：** `verification-before-completion`、`finishing-a-development-branch`
 
-- [ ] 添加 cutover runbook。
+- [x] 添加 cutover runbook。
 - [ ] 并行观察 24 小时。
 - [ ] 切换 Cloudflare route/domain。
 - [ ] 最终审查和收尾。
