@@ -6,6 +6,7 @@ export interface D1StatementLike {
 
 export interface D1Executor {
   prepare(query: string): D1StatementLike;
+  batch?<T = unknown>(statements: D1StatementLike[]): Promise<D1Result<T>[]>;
 }
 
 export interface DashboardSnapshotRecord {
@@ -32,26 +33,45 @@ const toRecord = (row: DashboardSnapshotRow): DashboardSnapshotRecord => ({
   generatedAtMs: row.generated_at_ms,
 });
 
+function prepareUpsert(db: D1Executor, record: DashboardSnapshotRecord) {
+  return db
+    .prepare(
+      `INSERT INTO dashboard_snapshots (snapshot_key, period, payload_json, etag, generated_at_ms)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(snapshot_key, period) DO UPDATE SET
+         payload_json = excluded.payload_json,
+         etag = excluded.etag,
+         generated_at_ms = excluded.generated_at_ms`
+    )
+    .bind(
+      record.snapshotKey,
+      record.period,
+      record.payloadJson,
+      record.etag,
+      record.generatedAtMs
+    );
+}
+
 export function createDashboardSnapshotRepository(db: D1Executor) {
   return {
     async upsert(record: DashboardSnapshotRecord) {
-      await db
-        .prepare(
-          `INSERT INTO dashboard_snapshots (snapshot_key, period, payload_json, etag, generated_at_ms)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(snapshot_key, period) DO UPDATE SET
-             payload_json = excluded.payload_json,
-             etag = excluded.etag,
-             generated_at_ms = excluded.generated_at_ms`
-        )
-        .bind(
-          record.snapshotKey,
-          record.period,
-          record.payloadJson,
-          record.etag,
-          record.generatedAtMs
-        )
-        .run();
+      await prepareUpsert(db, record).run();
+    },
+
+    async upsertMany(records: DashboardSnapshotRecord[]) {
+      if (records.length === 0) {
+        return;
+      }
+
+      const statements = records.map((record) => prepareUpsert(db, record));
+      if (db.batch) {
+        await db.batch(statements);
+        return;
+      }
+
+      for (const statement of statements) {
+        await statement.run();
+      }
     },
 
     async find(snapshotKey: string, period: string) {

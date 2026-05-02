@@ -2,6 +2,7 @@ import {
   createDashboardSnapshotRepository,
   type D1Executor,
   type D1StatementLike,
+  type DashboardSnapshotRecord,
 } from "../db/repositories";
 import type { WorkerCheckResult } from "../providers";
 
@@ -157,7 +158,6 @@ function toHistoryResult(row: CheckHistoryRow): WorkerCheckResult {
 async function loadHistoryByConfig(
   db: DashboardSnapshotExecutor,
   results: WorkerCheckResult[],
-  period: (typeof PERIODS)[number],
   nowMs: number
 ) {
   const ids = results.map((result) => result.id);
@@ -167,7 +167,7 @@ async function loadHistoryByConfig(
   }
 
   const placeholders = ids.map(() => "?").join(", ");
-  const cutoffMs = nowMs - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000;
+  const cutoffMs = nowMs - PERIOD_DAYS["30d"] * 24 * 60 * 60 * 1000;
   const rows = await db
     .prepare(
       `SELECT
@@ -203,29 +203,54 @@ async function loadHistoryByConfig(
   return historyByConfig;
 }
 
+function filterHistoryByPeriod(
+  historyByConfig: Map<string, WorkerCheckResult[]>,
+  period: (typeof PERIODS)[number],
+  nowMs: number
+) {
+  const cutoffMs = nowMs - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000;
+  const filtered = new Map<string, WorkerCheckResult[]>();
+
+  for (const [configId, items] of historyByConfig) {
+    filtered.set(
+      configId,
+      items.filter((item) => {
+        const checkedAtMs = Date.parse(item.checkedAt);
+        return checkedAtMs >= cutoffMs && checkedAtMs <= nowMs;
+      })
+    );
+  }
+
+  return filtered;
+}
+
 export async function writeDashboardSnapshot(
   db: DashboardSnapshotExecutor,
   results: WorkerCheckResult[],
   nowMs: number
 ): Promise<DashboardSnapshotWriteSummary> {
   const repository = createDashboardSnapshotRepository(db);
-  let writtenSnapshots = 0;
   const historyByPeriod = new Map<string, Map<string, WorkerCheckResult[]>>();
+  const records: DashboardSnapshotRecord[] = [];
+  const historyByConfig = await loadHistoryByConfig(db, results, nowMs);
 
   for (const period of PERIODS) {
-    const historyByConfig = await loadHistoryByConfig(db, results, period, nowMs);
-    historyByPeriod.set(period, historyByConfig);
-    const payloadJson = JSON.stringify(
-      buildPayload(results, period, nowMs, historyByConfig)
+    const periodHistoryByConfig = filterHistoryByPeriod(
+      historyByConfig,
+      period,
+      nowMs
     );
-    await repository.upsert({
+    historyByPeriod.set(period, periodHistoryByConfig);
+    const payloadJson = JSON.stringify(
+      buildPayload(results, period, nowMs, periodHistoryByConfig)
+    );
+    records.push({
       snapshotKey: "dashboard",
       period,
       payloadJson,
       etag: generateETag(payloadJson),
       generatedAtMs: nowMs,
     });
-    writtenSnapshots++;
   }
 
   const groupNames = new Set(
@@ -248,16 +273,17 @@ export async function writeDashboardSnapshot(
           groupInfoMap.get(groupName)
         )
       );
-      await repository.upsert({
+      records.push({
         snapshotKey: `group:${groupName}`,
         period,
         payloadJson,
         etag: generateETag(payloadJson),
         generatedAtMs: nowMs,
       });
-      writtenSnapshots++;
     }
   }
 
-  return { writtenSnapshots };
+  await repository.upsertMany(records);
+
+  return { writtenSnapshots: records.length };
 }

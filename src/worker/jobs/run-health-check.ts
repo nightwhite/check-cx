@@ -44,6 +44,10 @@ function buildOwnerId(scheduledTime: number): string {
   return `cron-${scheduledTime}-${crypto.randomUUID()}`;
 }
 
+export function shouldPruneCheckHistory(nowMs: number): boolean {
+  return new Date(nowMs).getUTCMinutes() === 0;
+}
+
 export async function runHealthCheckJob(
   env: Env,
   scheduledTime: number,
@@ -90,7 +94,9 @@ export async function runHealthCheckJob(
     await persistCheckResults(env.DB, results, finishedAtMs);
     await updateAvailabilityRollups(env.DB, results, finishedAtMs);
     await writeDashboardSnapshot(env.DB, results, finishedAtMs);
-    await pruneCheckHistory(env.DB, finishedAtMs);
+    if (shouldPruneCheckHistory(scheduledTime)) {
+      await pruneCheckHistory(env.DB, finishedAtMs);
+    }
 
     await repository.recordRun({
       id: crypto.randomUUID(),

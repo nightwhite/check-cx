@@ -82,6 +82,30 @@ describe("dashboard route", () => {
     expect(response.status).toBe(304);
   });
 
+  it("serves empty dashboard responses with stable ETag validators", async () => {
+    const app = createWorkerApp();
+    const env = createEnv(null);
+
+    const response = await app.request(
+      "http://example.com/api/dashboard?trendPeriod=7d",
+      {},
+      env
+    );
+    const etag = response.headers.get("ETag");
+
+    expect(response.status).toBe(200);
+    expect(etag).toMatch(/^".+"$/);
+
+    const cachedResponse = await app.request(
+      "http://example.com/api/dashboard?trendPeriod=7d",
+      { headers: { "If-None-Match": etag ?? "" } },
+      env
+    );
+
+    expect(cachedResponse.status).toBe(304);
+    expect(cachedResponse.headers.get("ETag")).toBe(etag);
+  });
+
   it("rejects invalid trendPeriod", async () => {
     const app = createWorkerApp();
 

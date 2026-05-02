@@ -8,6 +8,14 @@ interface SnapshotRow {
   generated_at_ms: number;
 }
 
+function generateETag(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index++) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+  return `"${(hash >>> 0).toString(16)}"`;
+}
+
 function emptyDashboard(period: string) {
   return {
     providerTimelines: [],
@@ -18,7 +26,7 @@ function emptyDashboard(period: string) {
     pollIntervalMs: 60_000,
     availabilityStats: {},
     trendPeriod: period,
-    generatedAt: Date.now(),
+    generatedAt: 0,
   };
 }
 
@@ -40,8 +48,22 @@ export const dashboardRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) 
     .first<SnapshotRow>();
 
   if (!row) {
-    return c.json(emptyDashboard(period), 200, {
-      "Cache-Control": "public, no-cache",
+    const payloadJson = JSON.stringify(emptyDashboard(period));
+    const etag = generateETag(payloadJson);
+    if (c.req.header("If-None-Match") === etag) {
+      return new Response(null, {
+        status: 304,
+        headers: { ETag: etag },
+      });
+    }
+
+    return new Response(payloadJson, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, no-cache",
+        ETag: etag,
+      },
     });
   }
 

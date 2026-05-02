@@ -16,8 +16,8 @@ interface ProviderStatusRow {
 }
 
 export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => {
-  const groupFilter = c.req.query("group") ?? null;
-  const modelFilter = c.req.query("model") ?? null;
+  const groupFilter = c.req.query("group") || null;
+  const modelFilter = c.req.query("model") || null;
   const generatedAt = new Date().toISOString();
   const result = await c.env.DB.prepare(
     `SELECT
@@ -34,7 +34,7 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
        l.checked_at_ms,
        l.message
      FROM check_configs c
-     LEFT JOIN check_models m ON m.id = c.model_id
+     JOIN check_models m ON m.id = c.model_id
      LEFT JOIN check_latest l ON l.config_id = c.id
      WHERE c.enabled = 1
        AND (?1 IS NULL OR c.group_name = ?1)

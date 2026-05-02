@@ -5,12 +5,7 @@ export interface EncryptedProviderKey {
 }
 
 function fromBase64(value: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(value);
-  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
-  for (let index = 0; index < binary.length; index++) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 
 async function importAesKey(rawKey: string): Promise<CryptoKey> {

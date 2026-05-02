@@ -32,6 +32,7 @@ class FakeStatement implements D1StatementLike {
 
   async all<T>() {
     if (this.query.includes("FROM check_history")) {
+      this.db.historyQueryCount++;
       return { results: this.db.historyRows as T[] };
     }
 
@@ -49,7 +50,23 @@ class FakeStatement implements D1StatementLike {
 
 class FakeD1 implements D1Executor {
   readonly rows = new Map<string, SnapshotRow>();
+  historyQueryCount = 0;
+  batchCalls = 0;
   readonly historyRows = [
+    {
+      config_id: "core-1",
+      name: "core-1",
+      type: "openai",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      model: "gpt-4o-mini",
+      group_name: "core",
+      status: "degraded",
+      latency_ms: 700,
+      ping_latency_ms: 70,
+      checked_at_ms: Date.parse("2026-04-13T00:00:00.000Z"),
+      message: "old degraded",
+      log_message: null,
+    },
     {
       config_id: "core-1",
       name: "core-1",
@@ -90,6 +107,14 @@ class FakeD1 implements D1Executor {
   prepare(query: string) {
     return new FakeStatement(this, query);
   }
+
+  async batch(statements: D1StatementLike[]) {
+    this.batchCalls++;
+    for (const statement of statements) {
+      await statement.run();
+    }
+    return [];
+  }
 }
 
 function createResult(id: string, groupName: string | null): WorkerCheckResult {
@@ -116,10 +141,12 @@ describe("writeDashboardSnapshot", () => {
       writeDashboardSnapshot(
         db,
         [createResult("core-1", "core"), createResult("solo-1", null)],
-        1_000
+        Date.parse("2026-05-03T00:00:00.000Z")
       )
     ).resolves.toEqual({ writtenSnapshots: 6 });
 
+    expect(db.historyQueryCount).toBe(1);
+    expect(db.batchCalls).toBe(1);
     expect(db.rows.has("dashboard:7d")).toBe(true);
     expect(db.rows.has("group:core:7d")).toBe(true);
     const groupPayload = JSON.parse(
@@ -143,6 +170,18 @@ describe("writeDashboardSnapshot", () => {
       (timeline: { id: string }) => timeline.id === "core-1"
     );
     expect(coreTimeline.items.map((item: { status: string }) => item.status)).toEqual([
+      "failed",
+      "operational",
+    ]);
+
+    const dashboard30dPayload = JSON.parse(
+      db.rows.get("dashboard:30d")?.payload_json ?? "{}"
+    );
+    const core30dTimeline = dashboard30dPayload.providerTimelines.find(
+      (timeline: { id: string }) => timeline.id === "core-1"
+    );
+    expect(core30dTimeline.items.map((item: { status: string }) => item.status)).toEqual([
+      "degraded",
       "failed",
       "operational",
     ]);

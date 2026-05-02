@@ -129,6 +129,35 @@ describe("status route", () => {
     });
     expect(db.lastQuery).toContain("(?1 IS NULL OR c.group_name = ?1)");
     expect(db.lastQuery).toContain("(?2 IS NULL OR m.model = ?2)");
+    expect(db.lastQuery).toContain("JOIN check_models m ON m.id = c.model_id");
+    expect(db.lastQuery).not.toContain("LEFT JOIN check_models");
     expect(db.lastBindValues).toEqual(["core", "gpt-4o-mini"]);
+  });
+
+  it("treats empty group and model query params as no filter", async () => {
+    const app = createWorkerApp();
+    const db = new FakeD1([
+      createRow({ id: "cfg-1", group_name: "core", model: "gpt-4o-mini" }),
+      createRow({ id: "cfg-2", group_name: "edge", model: "claude-3-5-haiku" }),
+    ]);
+
+    const response = await app.request(
+      "http://example.com/api/v1/status?group=&model=",
+      {},
+      createEnv(db)
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      providers: [{ id: "cfg-1" }, { id: "cfg-2" }],
+      summary: { total: 2 },
+      metadata: {
+        filters: {
+          group: null,
+          model: null,
+        },
+      },
+    });
+    expect(db.lastBindValues).toEqual([null, null]);
   });
 });
