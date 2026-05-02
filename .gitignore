@@ -52,3 +52,6 @@ error.log
 
 # openspec
 openspec/changes/
+
+# local reference projects
+/reference/
