@@ -13,9 +13,9 @@
 
 ## 3. D1 Data Layer
 
-- [ ] 3.1 Define Drizzle schema for templates, models, configs, history, latest, rollups, snapshots, groups, notifications, official status, locks, and job runs.
-- [ ] 3.2 Add D1 migrations and required indexes.
-- [ ] 3.3 Add repository smoke tests for insert, select, upsert, and prune.
+- [x] 3.1 Define Drizzle schema for templates, models, configs, history, latest, rollups, snapshots, groups, notifications, official status, locks, and job runs.
+- [x] 3.2 Add D1 migrations and required indexes.
+- [x] 3.3 Add repository smoke tests for insert, select, upsert, and prune.
 - [ ] 3.4 Verify local and remote D1 migrations.
 
 ## 4. Provider Runtime

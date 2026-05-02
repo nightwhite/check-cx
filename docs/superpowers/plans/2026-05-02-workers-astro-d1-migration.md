@@ -81,10 +81,12 @@
 
 **使用 skills：** `test-driven-development`、`cloudflare:workers-best-practices`、`systematic-debugging`
 
-- [ ] 定义 D1 schema。
-- [ ] 添加 D1 migrations 和索引。
-- [ ] 添加 repository smoke tests。
+- [x] 定义 D1 schema。
+- [x] 添加 D1 migrations 和索引。
+- [x] 添加 repository smoke tests。
 - [ ] 验证本地和远端 D1 migrations。
+
+备注：本地 D1 migration 已通过；远端 migration 需要把真实 Cloudflare D1 `database_id` 写入 `wrangler.jsonc` 后执行。
 
 ### 任务 3：迁移 Provider Health Check Runtime
 
