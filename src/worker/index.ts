@@ -6,7 +6,8 @@ const app = createWorkerApp();
 export default {
   async fetch(request, env, ctx) {
     const response = await app.fetch(request, env, ctx);
-    if (response.status !== 404) {
+    const pathname = new URL(request.url).pathname;
+    if (response.status !== 404 || pathname.startsWith("/api/")) {
       return response;
     }
 

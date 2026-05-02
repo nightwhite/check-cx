@@ -7,6 +7,14 @@ interface SnapshotRow {
   etag: string;
 }
 
+function parseGroupName(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 export const groupRoutes = new Hono<{ Bindings: Env }>().get(
   "/:groupName",
   async (c) => {
@@ -18,7 +26,11 @@ export const groupRoutes = new Hono<{ Bindings: Env }>().get(
       );
     }
 
-    const groupName = decodeURIComponent(c.req.param("groupName"));
+    const groupName = parseGroupName(c.req.param("groupName"));
+    if (!groupName) {
+      return c.json({ error: "invalid_group_name" }, 400);
+    }
+
     const row = await c.env.DB.prepare(
       `SELECT payload_json, etag
        FROM dashboard_snapshots

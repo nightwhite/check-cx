@@ -17,11 +17,12 @@ interface GroupInfoRow {
 class FakeStatement implements D1StatementLike {
   constructor(
     private readonly db: FakeD1,
+    private readonly query: string,
     private readonly values: unknown[] = []
   ) {}
 
   bind(...values: unknown[]) {
-    return new FakeStatement(this.db, values);
+    return new FakeStatement(this.db, this.query, values);
   }
 
   async first<T>() {
@@ -30,6 +31,10 @@ class FakeStatement implements D1StatementLike {
   }
 
   async all<T>() {
+    if (this.query.includes("FROM check_history")) {
+      return { results: this.db.historyRows as T[] };
+    }
+
     return { results: this.db.groupInfos as T[] };
   }
 
@@ -44,6 +49,36 @@ class FakeStatement implements D1StatementLike {
 
 class FakeD1 implements D1Executor {
   readonly rows = new Map<string, SnapshotRow>();
+  readonly historyRows = [
+    {
+      config_id: "core-1",
+      name: "core-1",
+      type: "openai",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      model: "gpt-4o-mini",
+      group_name: "core",
+      status: "failed",
+      latency_ms: 900,
+      ping_latency_ms: 90,
+      checked_at_ms: Date.parse("2026-05-01T00:00:00.000Z"),
+      message: "failed",
+      log_message: null,
+    },
+    {
+      config_id: "core-1",
+      name: "core-1",
+      type: "openai",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      model: "gpt-4o-mini",
+      group_name: "core",
+      status: "operational",
+      latency_ms: 100,
+      ping_latency_ms: 10,
+      checked_at_ms: Date.parse("2026-05-02T00:00:00.000Z"),
+      message: "OK",
+      log_message: null,
+    },
+  ];
   readonly groupInfos: GroupInfoRow[] = [
     {
       group_name: "core",
@@ -52,8 +87,8 @@ class FakeD1 implements D1Executor {
     },
   ];
 
-  prepare() {
-    return new FakeStatement(this);
+  prepare(query: string) {
+    return new FakeStatement(this, query);
   }
 }
 
@@ -100,5 +135,16 @@ describe("writeDashboardSnapshot", () => {
       })
     );
     expect(groupPayload.groupInfos).toBeUndefined();
+
+    const dashboardPayload = JSON.parse(
+      db.rows.get("dashboard:7d")?.payload_json ?? "{}"
+    );
+    const coreTimeline = dashboardPayload.providerTimelines.find(
+      (timeline: { id: string }) => timeline.id === "core-1"
+    );
+    expect(coreTimeline.items.map((item: { status: string }) => item.status)).toEqual([
+      "failed",
+      "operational",
+    ]);
   });
 });

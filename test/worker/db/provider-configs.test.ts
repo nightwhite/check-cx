@@ -1,21 +1,12 @@
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { resolve } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import { encryptProviderKey } from "../../../scripts/migration/encrypt-provider-keys";
 import { loadEnabledProviderConfigs } from "../../../src/worker/db/repositories/provider-configs";
-
-interface StatementSyncLike {
-  all(...values: unknown[]): Array<Record<string, unknown>>;
-  run(...values: unknown[]): unknown;
-}
-
-interface DatabaseSyncLike {
-  exec(query: string): void;
-  prepare(query: string): StatementSyncLike;
-}
+import {
+  createMigratedDatabase,
+  type DatabaseLike,
+  type StatementSyncLike,
+} from "./sqljs-test-helper";
 
 class D1StatementForSqlite {
   constructor(
@@ -33,33 +24,16 @@ class D1StatementForSqlite {
 }
 
 class D1SqliteAdapter {
-  constructor(private readonly db: DatabaseSyncLike) {}
+  constructor(private readonly db: DatabaseLike) {}
 
   prepare(query: string) {
     return new D1StatementForSqlite(this.db.prepare(query));
   }
 }
 
-const require = createRequire(import.meta.url);
-const { DatabaseSync } = require("node:sqlite") as {
-  DatabaseSync: new (path: string) => DatabaseSyncLike;
-};
-
-const migrationPath = resolve(
-  process.cwd(),
-  "drizzle/migrations/0001_initial.sql"
-);
-
-function createMigratedDatabase() {
-  const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys = ON;");
-  db.exec(readFileSync(migrationPath, "utf8"));
-  return db;
-}
-
 describe("provider config repository", () => {
   it("loads enabled D1 configs with decrypted keys and template options", async () => {
-    const db = createMigratedDatabase();
+    const db = await createMigratedDatabase();
     const encryptionKey = "0123456789abcdef0123456789abcdef";
     const encrypted = await encryptProviderKey("sk-test", encryptionKey);
 
@@ -114,7 +88,7 @@ describe("provider config repository", () => {
   });
 
   it("keeps maintenance configs loadable without an encrypted key", async () => {
-    const db = createMigratedDatabase();
+    const db = await createMigratedDatabase();
 
     db.prepare(
       "INSERT INTO check_models (id, type, model, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?)"

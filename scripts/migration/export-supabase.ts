@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, open } from "node:fs/promises";
 import { join } from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
@@ -44,37 +44,45 @@ export async function exportTable(
   options: ExportTableOptions = {}
 ) {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
-  const rows: Array<Record<string, unknown>> = [];
   let offset = 0;
+  await mkdir(outputDir, { recursive: true });
+  const file = await open(join(outputDir, `${table}.jsonl`), "w");
 
-  for (;;) {
-    let query = client.from(table).select("*");
-    if (table === "check_history") {
-      query = query.gte(
-        "checked_at",
-        new Date((options.nowMs ?? Date.now()) - CHECK_HISTORY_RETENTION_MS).toISOString()
-      );
+  try {
+    for (;;) {
+      let query = client.from(table).select("*");
+      if (table === "check_history") {
+        query = query.gte(
+          "checked_at",
+          new Date(
+            (options.nowMs ?? Date.now()) - CHECK_HISTORY_RETENTION_MS
+          ).toISOString()
+        );
+      }
+      query = query.order(table === "check_history" ? "checked_at" : "id", {
+        ascending: true,
+      });
+
+      const { data, error } = await query.range(offset, offset + pageSize - 1);
+
+      if (error) {
+        throw error;
+      }
+
+      const page = data ?? [];
+      if (page.length > 0) {
+        await file.write(page.map((row) => JSON.stringify(row)).join("\n"));
+        await file.write("\n");
+      }
+
+      if (page.length < pageSize) {
+        break;
+      }
+      offset += pageSize;
     }
-    query = query.order(table === "check_history" ? "checked_at" : "id", {
-      ascending: true,
-    });
-
-    const { data, error } = await query.range(offset, offset + pageSize - 1);
-
-    if (error) {
-      throw error;
-    }
-
-    const page = data ?? [];
-    rows.push(...page);
-    if (page.length < pageSize) {
-      break;
-    }
-    offset += pageSize;
+  } finally {
+    await file.close();
   }
-
-  const jsonl = rows.map((row) => JSON.stringify(row)).join("\n");
-  await writeFile(join(outputDir, `${table}.jsonl`), `${jsonl}\n`);
 }
 
 export async function exportSupabase(outputDir: string) {

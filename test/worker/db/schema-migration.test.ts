@@ -1,29 +1,6 @@
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { resolve } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
-interface StatementSyncLike {
-  all(): Array<Record<string, unknown>>;
-  get(...values: unknown[]): Record<string, unknown> | undefined;
-  run(...values: unknown[]): unknown;
-}
-
-interface DatabaseSyncLike {
-  exec(query: string): void;
-  prepare(query: string): StatementSyncLike;
-}
-
-const require = createRequire(import.meta.url);
-const { DatabaseSync } = require("node:sqlite") as {
-  DatabaseSync: new (path: string) => DatabaseSyncLike;
-};
-
-const migrationPath = resolve(
-  process.cwd(),
-  "drizzle/migrations/0001_initial.sql"
-);
+import { createMigratedDatabase } from "./sqljs-test-helper";
 
 const requiredTables = [
   "check_request_templates",
@@ -47,16 +24,9 @@ const requiredIndexes = [
   "idx_job_locks_locked_until",
 ];
 
-function createMigratedDatabase() {
-  const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys = ON;");
-  db.exec(readFileSync(migrationPath, "utf8"));
-  return db;
-}
-
 describe("D1 initial migration", () => {
-  it("creates all required tables and indexes", () => {
-    const db = createMigratedDatabase();
+  it("creates all required tables and indexes", async () => {
+    const db = await createMigratedDatabase();
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -71,8 +41,8 @@ describe("D1 initial migration", () => {
     expect(indexes).toEqual(expect.arrayContaining(requiredIndexes));
   });
 
-  it("supports insert, upsert, select, and prune smoke operations", () => {
-    const db = createMigratedDatabase();
+  it("supports insert, upsert, select, and prune smoke operations", async () => {
+    const db = await createMigratedDatabase();
 
     db.prepare(
       "INSERT INTO check_models (id, type, model, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?)"

@@ -36,12 +36,14 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
      FROM check_configs c
      LEFT JOIN check_models m ON m.id = c.model_id
      LEFT JOIN check_latest l ON l.config_id = c.id
-     WHERE c.enabled = 1`
-  ).all<ProviderStatusRow>();
+     WHERE c.enabled = 1
+       AND (?1 IS NULL OR c.group_name = ?1)
+       AND (?2 IS NULL OR m.model = ?2)`
+  )
+    .bind(groupFilter, modelFilter)
+    .all<ProviderStatusRow>();
 
-  const providers = result.results
-    .filter((row) => !groupFilter || row.group_name === groupFilter)
-    .filter((row) => !modelFilter || row.model === modelFilter)
+  const providers = (result.results ?? [])
     .map((row) => {
       const status = row.is_maintenance ? "maintenance" : row.status;
       return {
