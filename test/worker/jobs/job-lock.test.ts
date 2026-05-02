@@ -1,0 +1,126 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  createJobLockRepository,
+  type JobLockExecutor,
+  type JobLockStatementLike,
+} from "../../../src/worker/jobs/job-lock";
+
+interface LockRow {
+  job_name: string;
+  owner_id: string;
+  locked_until_ms: number;
+  updated_at_ms: number;
+}
+
+class FakeStatement implements JobLockStatementLike {
+  constructor(
+    private readonly db: FakeD1,
+    private readonly query: string,
+    private readonly values: unknown[] = []
+  ) {}
+
+  bind(...values: unknown[]) {
+    return new FakeStatement(this.db, this.query, values);
+  }
+
+  async first<T>() {
+    if (!this.query.includes("FROM job_locks")) {
+      return null;
+    }
+    const row = this.db.locks.get(String(this.values[0])) ?? null;
+    return row as T | null;
+  }
+
+  async run() {
+    if (this.query.startsWith("INSERT INTO job_locks")) {
+      const row: LockRow = {
+        job_name: String(this.values[0]),
+        owner_id: String(this.values[1]),
+        locked_until_ms: Number(this.values[2]),
+        updated_at_ms: Number(this.values[3]),
+      };
+      this.db.locks.set(row.job_name, row);
+      return { meta: { changes: 1 } };
+    }
+
+    if (this.query.startsWith("INSERT INTO job_runs")) {
+      this.db.jobRuns++;
+      return { meta: { changes: 1 } };
+    }
+
+    return { meta: { changes: 0 } };
+  }
+}
+
+class FakeD1 implements JobLockExecutor {
+  readonly locks = new Map<string, LockRow>();
+  jobRuns = 0;
+
+  prepare(query: string) {
+    return new FakeStatement(this, query);
+  }
+}
+
+describe("job lock repository", () => {
+  it("prevents overlap while an existing lock is active", async () => {
+    const db = new FakeD1();
+    const repository = createJobLockRepository(db);
+
+    await expect(
+      repository.acquire({
+        jobName: "health-check",
+        ownerId: "owner-1",
+        nowMs: 1_000,
+        ttlMs: 60_000,
+      })
+    ).resolves.toBe(true);
+    await expect(
+      repository.acquire({
+        jobName: "health-check",
+        ownerId: "owner-2",
+        nowMs: 2_000,
+        ttlMs: 60_000,
+      })
+    ).resolves.toBe(false);
+  });
+
+  it("allows a new owner after the previous lock expires", async () => {
+    const db = new FakeD1();
+    const repository = createJobLockRepository(db);
+
+    await repository.acquire({
+      jobName: "health-check",
+      ownerId: "owner-1",
+      nowMs: 1_000,
+      ttlMs: 60_000,
+    });
+
+    await expect(
+      repository.acquire({
+        jobName: "health-check",
+        ownerId: "owner-2",
+        nowMs: 62_000,
+        ttlMs: 60_000,
+      })
+    ).resolves.toBe(true);
+  });
+
+  it("records job runs", async () => {
+    const db = new FakeD1();
+    const repository = createJobLockRepository(db);
+
+    await repository.recordRun({
+      id: "run-1",
+      jobName: "health-check",
+      ownerId: "owner-1",
+      status: "success",
+      startedAtMs: 1_000,
+      finishedAtMs: 2_000,
+      checkedCount: 3,
+      errorMessage: null,
+    });
+
+    expect(db.jobRuns).toBe(1);
+  });
+});

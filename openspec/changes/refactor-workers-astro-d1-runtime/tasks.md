@@ -20,22 +20,22 @@
 
 ## 4. Provider Runtime
 
-- [ ] 4.1 Port provider check logic into Worker-safe modules.
-- [ ] 4.2 Preserve OpenAI, Gemini, Anthropic, OpenAI-compatible, Chat Completions, Responses, endpoint ping, challenge validation, and latency measurement.
-- [ ] 4.3 Add mock tests for success, provider error, timeout, invalid challenge, and maintenance mode.
+- [x] 4.1 Port provider check logic into Worker-safe modules.
+- [x] 4.2 Preserve OpenAI, Gemini, Anthropic, OpenAI-compatible, Chat Completions, Responses, endpoint ping, challenge validation, and latency measurement.
+- [x] 4.3 Add mock tests for success, provider error, timeout, invalid challenge, and maintenance mode.
 
 ## 5. Cron Health Check
 
-- [ ] 5.1 Implement job lock acquisition and expiry.
-- [ ] 5.2 Implement scheduled health check flow.
-- [ ] 5.3 Write `check_history`, `check_latest`, `availability_rollups`, `dashboard_snapshots`, and `job_runs`.
+- [x] 5.1 Implement job lock acquisition and expiry.
+- [x] 5.2 Implement scheduled health check flow.
+- [x] 5.3 Write `check_history`, `check_latest`, `availability_rollups`, `dashboard_snapshots`, and `job_runs`.
 - [ ] 5.4 Verify scheduled smoke test and overlapping job behavior.
 
 ## 6. Hono API Compatibility
 
-- [ ] 6.1 Implement dashboard, group, status, notifications, and internal routes.
-- [ ] 6.2 Validate `trendPeriod` as `7d`, `15d`, or `30d`.
-- [ ] 6.3 Add ETag and cache headers for dashboard and group APIs.
+- [x] 6.1 Implement dashboard, group, status, notifications, and internal routes.
+- [x] 6.2 Validate `trendPeriod` as `7d`, `15d`, or `30d`.
+- [x] 6.3 Add ETag and cache headers for dashboard and group APIs.
 - [ ] 6.4 Verify contract compatibility with old API samples.
 
 ## 7. Astro Single Page UI

@@ -1,4 +1,5 @@
 import { createWorkerApp } from "./app";
+import { runHealthCheckJob } from "./jobs";
 
 const app = createWorkerApp();
 
@@ -11,7 +12,7 @@ export default {
 
     return env.ASSETS.fetch(request);
   },
-  scheduled(_controller, _env, ctx) {
-    ctx.waitUntil(Promise.resolve());
+  scheduled(controller, env, ctx) {
+    ctx.waitUntil(runHealthCheckJob(env, controller.scheduledTime));
   },
 } satisfies ExportedHandler<Env>;

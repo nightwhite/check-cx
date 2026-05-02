@@ -92,26 +92,26 @@
 
 **使用 skills：** `karpathy-guidelines`、`test-driven-development`、`systematic-debugging`
 
-- [ ] 迁移 Worker-safe provider check 模块。
-- [ ] 保留 OpenAI、Gemini、Anthropic、OpenAI-compatible、Chat Completions、Responses、endpoint ping、challenge、latency。
-- [ ] 添加 provider mock tests。
+- [x] 迁移 Worker-safe provider check 模块。
+- [x] 保留 OpenAI、Gemini、Anthropic、OpenAI-compatible、Chat Completions、Responses、endpoint ping、challenge、latency。
+- [x] 添加 provider mock tests。
 
 ### 任务 4：实现 Cron Health Check Job
 
 **使用 skills：** `cloudflare:workers-best-practices`、`cloudflare:wrangler`、`test-driven-development`
 
-- [ ] 实现 job lock。
-- [ ] 实现 `scheduled()` health check flow。
-- [ ] 写入 history、latest、rollups、snapshots、job runs。
+- [x] 实现 job lock。
+- [x] 实现 `scheduled()` health check flow。
+- [x] 写入 history、latest、rollups、snapshots、job runs。
 - [ ] 验证 scheduled smoke test 和重叠 job 行为。
 
 ### 任务 5：实现 Hono API 兼容层
 
 **使用 skills：** `test-driven-development`、`cloudflare:workers-best-practices`、`requesting-code-review`
 
-- [ ] 实现 dashboard、group、status、notifications、internal routes。
-- [ ] 校验 `trendPeriod`。
-- [ ] 添加 ETag 和 cache headers。
+- [x] 实现 dashboard、group、status、notifications、internal routes。
+- [x] 校验 `trendPeriod`。
+- [x] 添加 ETag 和 cache headers。
 - [ ] 验证旧 API contract。
 
 ### 任务 6：规划并迁移 Astro 单页 UI
