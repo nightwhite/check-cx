@@ -15,6 +15,45 @@ interface ProviderStatusRow {
   message: string | null;
 }
 
+interface StatusTimelineItem {
+  status: string;
+  latencyMs: number | null;
+  pingLatencyMs: number | null;
+  checkedAt: string;
+  message: string;
+}
+
+function computeStatistics(items: StatusTimelineItem[]) {
+  const latencies = items
+    .map((item) => item.latencyMs)
+    .filter((latency): latency is number => latency !== null);
+  const operationalCount = items.filter(
+    (item) => item.status === "operational"
+  ).length;
+  const degradedCount = items.filter((item) => item.status === "degraded").length;
+  const failedCount = items.filter((item) => item.status === "failed").length;
+  const validationFailedCount = items.filter(
+    (item) => item.status === "validation_failed"
+  ).length;
+  const successCount = operationalCount + degradedCount;
+
+  return {
+    totalChecks: items.length,
+    operationalCount,
+    degradedCount,
+    failedCount,
+    validationFailedCount,
+    successRate:
+      items.length > 0 ? Math.round((successCount / items.length) * 10_000) / 100 : 0,
+    avgLatencyMs:
+      latencies.length > 0
+        ? Math.round(latencies.reduce((sum, latency) => sum + latency, 0) / latencies.length)
+        : null,
+    minLatencyMs: latencies.length > 0 ? Math.min(...latencies) : null,
+    maxLatencyMs: latencies.length > 0 ? Math.max(...latencies) : null,
+  };
+}
+
 export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => {
   const groupFilter = c.req.query("group") || null;
   const modelFilter = c.req.query("model") || null;
@@ -46,6 +85,19 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
   const providers = (result.results ?? [])
     .map((row) => {
       const status = row.is_maintenance ? "maintenance" : row.status;
+      const checkedAt = row.checked_at_ms
+        ? new Date(row.checked_at_ms).toISOString()
+        : generatedAt;
+      const latest = status
+        ? {
+            status,
+            latencyMs: row.latency_ms,
+            pingLatencyMs: row.ping_latency_ms,
+            checkedAt,
+            message: row.message ?? "",
+          }
+        : null;
+      const timeline = latest ? [latest] : [];
       return {
         id: row.id,
         name: row.name,
@@ -53,20 +105,14 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
         model: row.model,
         group: row.group_name,
         endpoint: row.endpoint,
-        latest: status
-          ? {
-              status,
-              latencyMs: row.latency_ms,
-              pingLatencyMs: row.ping_latency_ms,
-              checkedAt: row.checked_at_ms
-                ? new Date(row.checked_at_ms).toISOString()
-                : generatedAt,
-              message: row.message ?? "",
-            }
-          : null,
-        timeline: [],
+        latest,
+        statistics: computeStatistics(timeline),
+        timeline,
       };
     });
+  const latencyValues = providers
+    .map((provider) => provider.latest?.latencyMs ?? null)
+    .filter((latency): latency is number => latency !== null);
 
   return c.json({
     providers,
@@ -85,7 +131,13 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
       maintenance: providers.filter(
         (provider) => provider.latest?.status === "maintenance"
       ).length,
-      avgLatencyMs: null,
+      avgLatencyMs:
+        latencyValues.length > 0
+          ? Math.round(
+              latencyValues.reduce((sum, latency) => sum + latency, 0) /
+                latencyValues.length
+            )
+          : null,
     },
     metadata: {
       generatedAt,

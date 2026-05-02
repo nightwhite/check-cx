@@ -16,7 +16,7 @@ function generateETag(value: string): string {
   return `"${(hash >>> 0).toString(16)}"`;
 }
 
-function emptyDashboard(period: string) {
+function emptyDashboard(period: string, generatedAt = Date.now()) {
   return {
     providerTimelines: [],
     groupInfos: [],
@@ -26,8 +26,14 @@ function emptyDashboard(period: string) {
     pollIntervalMs: 60_000,
     availabilityStats: {},
     trendPeriod: period,
-    generatedAt: 0,
+    generatedAt,
   };
+}
+
+function generateDashboardETag(payload: ReturnType<typeof emptyDashboard>): string {
+  const { generatedAt, ...etagPayload } = payload;
+  void generatedAt;
+  return generateETag(JSON.stringify(etagPayload));
 }
 
 export const dashboardRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => {
@@ -48,8 +54,9 @@ export const dashboardRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) 
     .first<SnapshotRow>();
 
   if (!row) {
-    const payloadJson = JSON.stringify(emptyDashboard(period));
-    const etag = generateETag(payloadJson);
+    const payload = emptyDashboard(period);
+    const payloadJson = JSON.stringify(payload);
+    const etag = generateDashboardETag(payload);
     if (c.req.header("If-None-Match") === etag) {
       return new Response(null, {
         status: 304,

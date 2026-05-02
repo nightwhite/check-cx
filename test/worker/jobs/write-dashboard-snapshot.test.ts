@@ -22,6 +22,10 @@ class FakeStatement implements D1StatementLike {
   ) {}
 
   bind(...values: unknown[]) {
+    this.db.maxBindCount = Math.max(this.db.maxBindCount, values.length);
+    if (values.length > 999) {
+      throw new Error(`too many D1 bind parameters: ${values.length}`);
+    }
     return new FakeStatement(this.db, this.query, values);
   }
 
@@ -52,6 +56,7 @@ class FakeD1 implements D1Executor {
   readonly rows = new Map<string, SnapshotRow>();
   historyQueryCount = 0;
   batchCalls = 0;
+  maxBindCount = 0;
   readonly historyRows = [
     {
       config_id: "core-1",
@@ -185,5 +190,23 @@ describe("writeDashboardSnapshot", () => {
       "failed",
       "operational",
     ]);
+  });
+
+  it("chunks history queries to stay under the D1 bind parameter limit", async () => {
+    const db = new FakeD1();
+    const results = Array.from({ length: 1_000 }, (_, index) =>
+      createResult(`config-${index}`, null)
+    );
+
+    await expect(
+      writeDashboardSnapshot(
+        db,
+        results,
+        Date.parse("2026-05-03T00:00:00.000Z")
+      )
+    ).resolves.toEqual({ writtenSnapshots: 3 });
+
+    expect(db.historyQueryCount).toBeGreaterThan(1);
+    expect(db.maxBindCount).toBeLessThanOrEqual(999);
   });
 });

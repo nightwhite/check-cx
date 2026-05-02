@@ -16,6 +16,7 @@ const PERIOD_DAYS: Record<(typeof PERIODS)[number], number> = {
   "15d": 15,
   "30d": 30,
 };
+const HISTORY_ID_CHUNK_SIZE = 900;
 
 interface GroupInfoRow {
   group_name: string;
@@ -166,38 +167,42 @@ async function loadHistoryByConfig(
     return historyByConfig;
   }
 
-  const placeholders = ids.map(() => "?").join(", ");
   const cutoffMs = nowMs - PERIOD_DAYS["30d"] * 24 * 60 * 60 * 1000;
-  const rows = await db
-    .prepare(
-      `SELECT
-         h.config_id,
-         c.name,
-         c.type,
-         c.endpoint,
-         m.model,
-         c.group_name,
-         h.status,
-         h.latency_ms,
-         h.ping_latency_ms,
-         h.checked_at_ms,
-         h.message,
-         h.log_message
-       FROM check_history h
-       JOIN check_configs c ON c.id = h.config_id
-       JOIN check_models m ON m.id = c.model_id
-       WHERE h.config_id IN (${placeholders})
-         AND h.checked_at_ms >= ?
-         AND h.checked_at_ms <= ?
-       ORDER BY h.config_id, h.checked_at_ms ASC`
-    )
-    .bind(...ids, cutoffMs, nowMs)
-    .all<CheckHistoryRow>();
 
-  for (const row of rows.results ?? []) {
-    const items = historyByConfig.get(row.config_id) ?? [];
-    items.push(toHistoryResult(row));
-    historyByConfig.set(row.config_id, items);
+  for (let index = 0; index < ids.length; index += HISTORY_ID_CHUNK_SIZE) {
+    const chunk = ids.slice(index, index + HISTORY_ID_CHUNK_SIZE);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = await db
+      .prepare(
+        `SELECT
+           h.config_id,
+           c.name,
+           c.type,
+           c.endpoint,
+           m.model,
+           c.group_name,
+           h.status,
+           h.latency_ms,
+           h.ping_latency_ms,
+           h.checked_at_ms,
+           h.message,
+           h.log_message
+         FROM check_history h
+         JOIN check_configs c ON c.id = h.config_id
+         JOIN check_models m ON m.id = c.model_id
+         WHERE h.config_id IN (${placeholders})
+           AND h.checked_at_ms >= ?
+           AND h.checked_at_ms <= ?
+         ORDER BY h.config_id, h.checked_at_ms ASC`
+      )
+      .bind(...chunk, cutoffMs, nowMs)
+      .all<CheckHistoryRow>();
+
+    for (const row of rows.results ?? []) {
+      const items = historyByConfig.get(row.config_id) ?? [];
+      items.push(toHistoryResult(row));
+      historyByConfig.set(row.config_id, items);
+    }
   }
 
   return historyByConfig;

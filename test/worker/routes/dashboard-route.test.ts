@@ -92,9 +92,11 @@ describe("dashboard route", () => {
       env
     );
     const etag = response.headers.get("ETag");
+    const body = await response.json() as { generatedAt: number };
 
     expect(response.status).toBe(200);
     expect(etag).toMatch(/^".+"$/);
+    expect(body.generatedAt).toBeGreaterThan(0);
 
     const cachedResponse = await app.request(
       "http://example.com/api/dashboard?trendPeriod=7d",

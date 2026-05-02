@@ -99,12 +99,22 @@ describe("status route", () => {
             latencyMs: 120,
             pingLatencyMs: 12,
           },
+          statistics: {
+            totalChecks: 1,
+          },
+          timeline: [
+            {
+              status: "maintenance",
+              latencyMs: 120,
+            },
+          ],
         },
       ],
       summary: {
         total: 1,
         operational: 0,
         maintenance: 1,
+        avgLatencyMs: 120,
       },
     });
   });
@@ -159,5 +169,55 @@ describe("status route", () => {
       },
     });
     expect(db.lastBindValues).toEqual([null, null]);
+  });
+
+  it("includes status API compatibility fields from latest data", async () => {
+    const app = createWorkerApp();
+    const db = new FakeD1([
+      createRow({
+        status: "degraded",
+        latency_ms: 240,
+        ping_latency_ms: 24,
+      }),
+    ]);
+
+    const response = await app.request(
+      "http://example.com/api/v1/status",
+      {},
+      createEnv(db)
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      providers: [
+        {
+          id: "cfg-1",
+          statistics: {
+            totalChecks: 1,
+            operationalCount: 0,
+            degradedCount: 1,
+            failedCount: 0,
+            validationFailedCount: 0,
+            successRate: 100,
+            avgLatencyMs: 240,
+            minLatencyMs: 240,
+            maxLatencyMs: 240,
+          },
+          timeline: [
+            {
+              status: "degraded",
+              latencyMs: 240,
+              pingLatencyMs: 24,
+              message: "OK",
+            },
+          ],
+        },
+      ],
+      summary: {
+        total: 1,
+        degraded: 1,
+        avgLatencyMs: 240,
+      },
+    });
   });
 });

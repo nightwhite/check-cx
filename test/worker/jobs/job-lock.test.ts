@@ -33,7 +33,10 @@ class FakeStatement implements JobLockStatementLike {
   }
 
   async run() {
-    if (this.query.startsWith("UPDATE job_locks")) {
+    if (
+      this.query.startsWith("UPDATE job_locks") &&
+      this.query.includes("SET owner_id")
+    ) {
       const jobName = String(this.values[3]);
       const nowMs = Number(this.values[4]);
       const existing = this.db.locks.get(jobName);
@@ -46,6 +49,25 @@ class FakeStatement implements JobLockStatementLike {
         owner_id: String(this.values[0]),
         locked_until_ms: Number(this.values[1]),
         updated_at_ms: Number(this.values[2]),
+      });
+      return { meta: { changes: 1 } };
+    }
+
+    if (
+      this.query.startsWith("UPDATE job_locks") &&
+      this.query.includes("SET locked_until_ms")
+    ) {
+      const jobName = String(this.values[2]);
+      const ownerId = String(this.values[3]);
+      const existing = this.db.locks.get(jobName);
+      if (!existing || existing.owner_id !== ownerId) {
+        return { meta: { changes: 0 } };
+      }
+
+      this.db.locks.set(jobName, {
+        ...existing,
+        locked_until_ms: Number(this.values[0]),
+        updated_at_ms: Number(this.values[1]),
       });
       return { meta: { changes: 1 } };
     }
@@ -144,5 +166,35 @@ describe("job lock repository", () => {
     });
 
     expect(db.jobRuns).toBe(1);
+  });
+
+  it("releases a lock only for the matching owner", async () => {
+    const db = new FakeD1();
+    const repository = createJobLockRepository(db);
+
+    await repository.acquire({
+      jobName: "health-check",
+      ownerId: "owner-1",
+      nowMs: 1_000,
+      ttlMs: 60_000,
+    });
+
+    await expect(
+      repository.release({
+        jobName: "health-check",
+        ownerId: "owner-2",
+        nowMs: 2_000,
+      })
+    ).resolves.toBe(false);
+    expect(db.locks.get("health-check")?.locked_until_ms).toBe(61_000);
+
+    await expect(
+      repository.release({
+        jobName: "health-check",
+        ownerId: "owner-1",
+        nowMs: 2_000,
+      })
+    ).resolves.toBe(true);
+    expect(db.locks.get("health-check")?.locked_until_ms).toBe(2_000);
   });
 });

@@ -33,7 +33,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 function getConfigEncryptionKey(env: Env): string {
-  const value = (env as unknown as Record<string, unknown>).CONFIG_ENCRYPTION_KEY;
+  const value = env.CONFIG_ENCRYPTION_KEY;
   if (typeof value !== "string" || value.length === 0) {
     throw new Error("CONFIG_ENCRYPTION_KEY is required");
   }
@@ -108,6 +108,11 @@ export async function runHealthCheckJob(
       checkedCount: results.length,
       errorMessage: null,
     });
+    await repository.release({
+      jobName: JOB_NAME,
+      ownerId,
+      nowMs: finishedAtMs,
+    });
 
     return {
       status: "success",
@@ -126,6 +131,11 @@ export async function runHealthCheckJob(
       finishedAtMs: now(),
       checkedCount: 0,
       errorMessage,
+    });
+    await repository.release({
+      jobName: JOB_NAME,
+      ownerId,
+      nowMs: now(),
     });
 
     return {

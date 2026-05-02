@@ -28,6 +28,12 @@ export interface RecordJobRunInput {
   errorMessage: string | null;
 }
 
+export interface ReleaseJobLockInput {
+  jobName: string;
+  ownerId: string;
+  nowMs: number;
+}
+
 function getChangeCount(result: { meta?: { changes?: number } }): number {
   return result.meta?.changes ?? 0;
 }
@@ -100,6 +106,19 @@ export function createJobLockRepository(db: JobLockExecutor) {
           input.errorMessage
         )
         .run();
+    },
+
+    async release(input: ReleaseJobLockInput): Promise<boolean> {
+      const result = await db
+        .prepare(
+          `UPDATE job_locks
+           SET locked_until_ms = ?, updated_at_ms = ?
+           WHERE job_name = ? AND owner_id = ?`
+        )
+        .bind(input.nowMs, input.nowMs, input.jobName, input.ownerId)
+        .run();
+
+      return getChangeCount(result) > 0;
     },
   };
 }

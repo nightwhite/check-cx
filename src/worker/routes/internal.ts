@@ -3,7 +3,7 @@ import { Hono, type Context } from "hono";
 type InternalContext = Context<{ Bindings: Env }>;
 
 function getInternalMetricsToken(env: Env): string | null {
-  const value = (env as unknown as Record<string, unknown>).INTERNAL_METRICS_TOKEN;
+  const value = env.INTERNAL_METRICS_TOKEN;
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 

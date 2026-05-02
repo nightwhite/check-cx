@@ -12,7 +12,7 @@
 
 ## Skills 总规则
 
-所有编程相关工作必须遵循 `/Users/night/Documents/code/su8/check-cx/AGENTS.md` 中的 `karpathy-guidelines` 要求。
+所有编程相关工作必须遵循仓库根目录 `AGENTS.md` 中的 `karpathy-guidelines` 要求。
 
 每个任务开始前都必须写明：
 
