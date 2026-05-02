@@ -31,7 +31,7 @@ function createResult(config: WorkerProviderConfig): WorkerCheckResult {
 }
 
 describe("runProviderChecks", () => {
-  it("runs enabled checks with bounded concurrency and skips maintenance configs", async () => {
+  it("runs checks with bounded concurrency and includes maintenance configs", async () => {
     let active = 0;
     let maxActive = 0;
     const started: string[] = [];
@@ -53,7 +53,12 @@ describe("runProviderChecks", () => {
     );
 
     expect(maxActive).toBeLessThanOrEqual(2);
-    expect(started).toEqual(["a", "b", "c"]);
-    expect(results.map((result) => result.id)).toEqual(["a", "b", "c"]);
+    expect(started).toEqual(["a", "b", "c", "maintenance"]);
+    expect(results.map((result) => result.id)).toEqual([
+      "a",
+      "b",
+      "c",
+      "maintenance",
+    ]);
   });
 });

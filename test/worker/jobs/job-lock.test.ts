@@ -33,7 +33,28 @@ class FakeStatement implements JobLockStatementLike {
   }
 
   async run() {
-    if (this.query.startsWith("INSERT INTO job_locks")) {
+    if (this.query.startsWith("UPDATE job_locks")) {
+      const jobName = String(this.values[3]);
+      const nowMs = Number(this.values[4]);
+      const existing = this.db.locks.get(jobName);
+      if (!existing || existing.locked_until_ms > nowMs) {
+        return { meta: { changes: 0 } };
+      }
+
+      this.db.locks.set(jobName, {
+        job_name: jobName,
+        owner_id: String(this.values[0]),
+        locked_until_ms: Number(this.values[1]),
+        updated_at_ms: Number(this.values[2]),
+      });
+      return { meta: { changes: 1 } };
+    }
+
+    if (this.query.startsWith("INSERT OR IGNORE INTO job_locks")) {
+      if (this.db.locks.has(String(this.values[0]))) {
+        return { meta: { changes: 0 } };
+      }
+
       const row: LockRow = {
         job_name: String(this.values[0]),
         owner_id: String(this.values[1]),
@@ -83,6 +104,7 @@ describe("job lock repository", () => {
         ttlMs: 60_000,
       })
     ).resolves.toBe(false);
+    expect(db.locks.get("health-check")?.owner_id).toBe("owner-1");
   });
 
   it("allows a new owner after the previous lock expires", async () => {

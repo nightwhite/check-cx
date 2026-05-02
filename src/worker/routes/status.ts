@@ -6,6 +6,7 @@ interface ProviderStatusRow {
   type: string;
   endpoint: string;
   group_name: string | null;
+  is_maintenance: number;
   model: string | null;
   status: string | null;
   latency_ms: number | null;
@@ -17,6 +18,7 @@ interface ProviderStatusRow {
 export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => {
   const groupFilter = c.req.query("group") ?? null;
   const modelFilter = c.req.query("model") ?? null;
+  const generatedAt = new Date().toISOString();
   const result = await c.env.DB.prepare(
     `SELECT
        c.id,
@@ -24,6 +26,7 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
        c.type,
        c.endpoint,
        c.group_name,
+       c.is_maintenance,
        m.model,
        l.status,
        l.latency_ms,
@@ -39,24 +42,29 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
   const providers = result.results
     .filter((row) => !groupFilter || row.group_name === groupFilter)
     .filter((row) => !modelFilter || row.model === modelFilter)
-    .map((row) => ({
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      model: row.model,
-      group: row.group_name,
-      endpoint: row.endpoint,
-      latest: row.status
-        ? {
-            status: row.status,
-            latencyMs: row.latency_ms,
-            pingLatencyMs: row.ping_latency_ms,
-            checkedAt: new Date(row.checked_at_ms ?? 0).toISOString(),
-            message: row.message ?? "",
-          }
-        : null,
-      timeline: [],
-    }));
+    .map((row) => {
+      const status = row.is_maintenance ? "maintenance" : row.status;
+      return {
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        model: row.model,
+        group: row.group_name,
+        endpoint: row.endpoint,
+        latest: status
+          ? {
+              status,
+              latencyMs: row.latency_ms,
+              pingLatencyMs: row.ping_latency_ms,
+              checkedAt: row.checked_at_ms
+                ? new Date(row.checked_at_ms).toISOString()
+                : generatedAt,
+              message: row.message ?? "",
+            }
+          : null,
+        timeline: [],
+      };
+    });
 
   return c.json({
     providers,
@@ -78,7 +86,7 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
       avgLatencyMs: null,
     },
     metadata: {
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       pollIntervalMs: 60_000,
       pollIntervalLabel: "60 秒",
       filters: {

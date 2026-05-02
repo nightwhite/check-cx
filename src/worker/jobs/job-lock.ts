@@ -28,45 +28,51 @@ export interface RecordJobRunInput {
   errorMessage: string | null;
 }
 
-interface JobLockRow {
-  job_name: string;
-  owner_id: string;
-  locked_until_ms: number;
-  updated_at_ms: number;
+function getChangeCount(result: { meta?: { changes?: number } }): number {
+  return result.meta?.changes ?? 0;
 }
 
 export function createJobLockRepository(db: JobLockExecutor) {
   return {
     async acquire(input: AcquireJobLockInput): Promise<boolean> {
-      const existing = await db
+      const lockedUntilMs = input.nowMs + input.ttlMs;
+      const updated = await db
         .prepare(
-          "SELECT job_name, owner_id, locked_until_ms, updated_at_ms FROM job_locks WHERE job_name = ?"
-        )
-        .bind(input.jobName)
-        .first<JobLockRow>();
-
-      if (existing && existing.locked_until_ms > input.nowMs) {
-        return false;
-      }
-
-      await db
-        .prepare(
-          `INSERT INTO job_locks (job_name, owner_id, locked_until_ms, updated_at_ms)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(job_name) DO UPDATE SET
-             owner_id = excluded.owner_id,
-             locked_until_ms = excluded.locked_until_ms,
-             updated_at_ms = excluded.updated_at_ms`
+          `UPDATE job_locks
+           SET owner_id = ?, locked_until_ms = ?, updated_at_ms = ?
+           WHERE job_name = ? AND locked_until_ms <= ?`
         )
         .bind(
-          input.jobName,
           input.ownerId,
-          input.nowMs + input.ttlMs,
+          lockedUntilMs,
+          input.nowMs,
+          input.jobName,
           input.nowMs
         )
         .run();
 
-      return true;
+      if (getChangeCount(updated) > 0) {
+        return true;
+      }
+
+      const inserted = await db
+        .prepare(
+          `INSERT OR IGNORE INTO job_locks (
+             job_name,
+             owner_id,
+             locked_until_ms,
+             updated_at_ms
+           ) VALUES (?, ?, ?, ?)`
+        )
+        .bind(
+          input.jobName,
+          input.ownerId,
+          lockedUntilMs,
+          input.nowMs
+        )
+        .run();
+
+      return getChangeCount(inserted) > 0;
     },
 
     async recordRun(input: RecordJobRunInput): Promise<void> {

@@ -9,7 +9,7 @@ import { updateAvailabilityRollups } from "./update-rollups";
 import { writeDashboardSnapshot } from "./write-dashboard-snapshot";
 
 const JOB_NAME = "health-check";
-const LOCK_TTL_MS = 55_000;
+const LOCK_TTL_MS = 10 * 60_000;
 
 export interface RunHealthCheckOptions {
   ownerId?: string;
