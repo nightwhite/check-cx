@@ -50,3 +50,19 @@ export async function exportSupabase(outputDir: string) {
     await exportTable(outputDir, table, url, serviceRoleKey);
   }
 }
+
+export async function runSupabaseExportCli(argv = process.argv): Promise<void> {
+  const outputDir = argv[2];
+  if (!outputDir) {
+    throw new Error("Usage: tsx export-supabase.ts <output-dir>");
+  }
+
+  await exportSupabase(outputDir);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runSupabaseExportCli().catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

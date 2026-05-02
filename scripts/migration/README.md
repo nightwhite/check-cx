@@ -27,3 +27,18 @@ wrangler secret put CONFIG_ENCRYPTION_KEY
 - 默认只导出最近 30 天 `check_history`。
 - D1 中不写入明文 `api_key`。
 - 真实导入前必须先应用 D1 migration。
+
+## 执行顺序
+
+```bash
+SUPABASE_URL="https://..." \
+SUPABASE_SERVICE_ROLE_KEY="..." \
+corepack pnpm dlx tsx scripts/migration/export-supabase.ts ./tmp/supabase-export
+
+CONFIG_ENCRYPTION_KEY="同 Worker Secret" \
+corepack pnpm dlx tsx scripts/migration/import-d1.ts ./tmp/supabase-export > ./tmp/d1-import.sql
+
+corepack pnpm exec wrangler d1 execute DB --remote --file ./tmp/d1-import.sql
+```
+
+`import-d1.ts` 会导入模板、模型、配置、最近 30 天历史、分组、系统通知，并从历史记录派生 `check_latest`。
