@@ -72,10 +72,10 @@
 
 **使用 skills：** `cloudflare:workers-best-practices`、`cloudflare:wrangler`、`test-driven-development`
 
-- [ ] 添加 Astro、Hono、Wrangler、Workers types、Vitest、D1 和 Drizzle 依赖。
-- [ ] 添加 `astro.config.mjs`、`wrangler.jsonc`、`src/worker/index.ts`、`/api/health`。
-- [ ] 添加最小 Astro 单页 shell。
-- [ ] 验证 `pnpm build`、`wrangler types`、`wrangler deploy --dry-run`。
+- [x] 添加 Astro、Hono、Wrangler、Workers types、Vitest、D1 和 Drizzle 依赖。
+- [x] 添加 `astro.config.mjs`、`wrangler.jsonc`、`src/worker/index.ts`、`/api/health`。
+- [x] 添加最小 Astro 单页 shell。
+- [x] 验证 `pnpm build`、`wrangler types`、`wrangler deploy --dry-run`。
 
 ### 任务 2：建立 D1 + Drizzle Schema
 

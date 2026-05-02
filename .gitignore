@@ -19,6 +19,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -36,6 +37,10 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# cloudflare / astro local state
+.astro
+.wrangler
 
 # typescript
 *.tsbuildinfo

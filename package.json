@@ -3,16 +3,23 @@
   "version": "1.22.2",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev": "astro dev",
+    "dev:worker": "astro build && wrangler dev",
+    "build": "astro build",
+    "start": "astro preview",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "wrangler:types": "wrangler types",
+    "deploy:dry-run": "wrangler deploy --dry-run"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.74",
     "@ai-sdk/google": "^2.0.67",
     "@ai-sdk/openai": "^2.0.102",
     "@ai-sdk/openai-compatible": "^1.0.35",
+    "@astrojs/cloudflare": "^13.3.0",
+    "@astrojs/react": "^5.0.4",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -21,11 +28,15 @@
     "@radix-ui/react-hover-card": "^1.1.15",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.103.0",
+    "@tailwindcss/vite": "^4.2.4",
     "@vercel/analytics": "^1.6.1",
     "@vercel/speed-insights": "^1.3.1",
     "ai": "^5.0.171",
+    "astro": "^6.2.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.16",
     "lucide-react": "^0.577.0",
     "next": "16.2.1",
     "next-themes": "^0.4.6",
@@ -36,18 +47,23 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "zod": "^4.4.2"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260502.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^20.19.39",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4.2.2",
     "tw-animate-css": "^1.4.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5",
+    "wrangler": "^4.87.0"
   },
   "packageManager": "pnpm@10.10.0+sha512.d615db246fe70f25dcfea6d8d73dee782ce23e2245e3c4f6f888249fb568149318637dca73c2c5c8ef2a4ca0d5657fb9567188bfab47f566d1ee6ce987815c39"
 }

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { X, AlertCircle, Info, AlertTriangle } from "lucide-react";
-import { SystemNotificationRow } from "@/lib/types/database";
+import type { SystemNotificationRow } from "@/lib/types/database";
 import { cn } from "@/lib/utils/cn";
 
 export function NotificationBanner() {
@@ -17,7 +17,7 @@ export function NotificationBanner() {
       try {
         const response = await fetch("/api/notifications");
         if (response.ok) {
-          const data = await response.json();
+          const data = (await response.json()) as SystemNotificationRow[];
           setNotifications(data);
         }
       } catch (error) {

@@ -6,10 +6,10 @@
 
 ## 2. Worker Skeleton
 
-- [ ] 2.1 Add Astro, Hono, Wrangler, Workers types, Vitest, D1 and Drizzle dependencies.
-- [ ] 2.2 Add `astro.config.mjs`, `wrangler.jsonc`, `src/worker/index.ts`, and `/api/health`.
-- [ ] 2.3 Add a minimal Astro single-page shell.
-- [ ] 2.4 Verify `pnpm build`, `wrangler types`, and `wrangler deploy --dry-run`.
+- [x] 2.1 Add Astro, Hono, Wrangler, Workers types, Vitest, D1 and Drizzle dependencies.
+- [x] 2.2 Add `astro.config.mjs`, `wrangler.jsonc`, `src/worker/index.ts`, and `/api/health`.
+- [x] 2.3 Add a minimal Astro single-page shell.
+- [x] 2.4 Verify `pnpm build`, `wrangler types`, and `wrangler deploy --dry-run`.
 
 ## 3. D1 Data Layer
 

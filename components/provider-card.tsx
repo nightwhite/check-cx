@@ -40,7 +40,7 @@ export function ProviderCard({
   availabilityStats,
   selectedPeriod,
 }: ProviderCardProps) {
-  const { id, latest, items } = timeline;
+  const { latest, items } = timeline;
   const preset = STATUS_META[latest.status];
   const isMaintenance = latest.status === "maintenance";
   const officialStatus = latest.officialStatus;
