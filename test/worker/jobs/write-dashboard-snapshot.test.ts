@@ -8,6 +8,12 @@ interface SnapshotRow {
   payload_json: string;
 }
 
+interface GroupInfoRow {
+  group_name: string;
+  website_url: string | null;
+  tags: string | null;
+}
+
 class FakeStatement implements D1StatementLike {
   constructor(
     private readonly db: FakeD1,
@@ -23,6 +29,10 @@ class FakeStatement implements D1StatementLike {
     return (this.db.rows.get(key) ?? null) as T | null;
   }
 
+  async all<T>() {
+    return { results: this.db.groupInfos as T[] };
+  }
+
   async run() {
     const key = `${String(this.values[0])}:${String(this.values[1])}`;
     this.db.rows.set(key, {
@@ -34,6 +44,13 @@ class FakeStatement implements D1StatementLike {
 
 class FakeD1 implements D1Executor {
   readonly rows = new Map<string, SnapshotRow>();
+  readonly groupInfos: GroupInfoRow[] = [
+    {
+      group_name: "core",
+      website_url: "https://core.example",
+      tags: "prod,core",
+    },
+  ];
 
   prepare() {
     return new FakeStatement(this);
@@ -70,8 +87,18 @@ describe("writeDashboardSnapshot", () => {
 
     expect(db.rows.has("dashboard:7d")).toBe(true);
     expect(db.rows.has("group:core:7d")).toBe(true);
-    expect(
-      JSON.parse(db.rows.get("group:core:7d")?.payload_json ?? "{}").total
-    ).toBe(1);
+    const groupPayload = JSON.parse(
+      db.rows.get("group:core:7d")?.payload_json ?? "{}"
+    );
+    expect(groupPayload).toEqual(
+      expect.objectContaining({
+        groupName: "core",
+        displayName: "core",
+        tags: "prod,core",
+        websiteUrl: "https://core.example",
+        total: 1,
+      })
+    );
+    expect(groupPayload.groupInfos).toBeUndefined();
   });
 });

@@ -3,6 +3,9 @@ import { join } from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
+const DEFAULT_PAGE_SIZE = 1_000;
+const CHECK_HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 const TABLES = [
   "check_request_templates",
   "check_models",
@@ -12,29 +15,65 @@ const TABLES = [
   "system_notifications",
 ] as const;
 
-async function exportTable(
+export interface SupabaseQueryLike {
+  gte(column: string, value: string): SupabaseQueryLike;
+  order(column: string, options?: { ascending?: boolean }): SupabaseQueryLike;
+  range(
+    from: number,
+    to: number
+  ): PromiseLike<{ data: Array<Record<string, unknown>> | null; error: unknown }>;
+}
+
+export interface SupabaseSelectLike {
+  select(columns: string): SupabaseQueryLike;
+}
+
+export interface SupabaseLike {
+  from(table: string): SupabaseSelectLike;
+}
+
+interface ExportTableOptions {
+  nowMs?: number;
+  pageSize?: number;
+}
+
+export async function exportTable(
   outputDir: string,
   table: (typeof TABLES)[number],
-  url: string,
-  serviceRoleKey: string
+  client: SupabaseLike,
+  options: ExportTableOptions = {}
 ) {
-  const client = createClient(url, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
-  const query =
-    table === "check_history"
-      ? client
-          .from(table)
-          .select("*")
-          .gte("checked_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
-      : client.from(table).select("*");
-  const { data, error } = await query;
+  const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+  const rows: Array<Record<string, unknown>> = [];
+  let offset = 0;
 
-  if (error) {
-    throw error;
+  for (;;) {
+    let query = client.from(table).select("*");
+    if (table === "check_history") {
+      query = query.gte(
+        "checked_at",
+        new Date((options.nowMs ?? Date.now()) - CHECK_HISTORY_RETENTION_MS).toISOString()
+      );
+    }
+    query = query.order(table === "check_history" ? "checked_at" : "id", {
+      ascending: true,
+    });
+
+    const { data, error } = await query.range(offset, offset + pageSize - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < pageSize) {
+      break;
+    }
+    offset += pageSize;
   }
 
-  const jsonl = (data ?? []).map((row) => JSON.stringify(row)).join("\n");
+  const jsonl = rows.map((row) => JSON.stringify(row)).join("\n");
   await writeFile(join(outputDir, `${table}.jsonl`), `${jsonl}\n`);
 }
 
@@ -46,8 +85,11 @@ export async function exportSupabase(outputDir: string) {
   }
 
   await mkdir(outputDir, { recursive: true });
+  const client = createClient(url, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
   for (const table of TABLES) {
-    await exportTable(outputDir, table, url, serviceRoleKey);
+    await exportTable(outputDir, table, client);
   }
 }
 

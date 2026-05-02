@@ -108,13 +108,13 @@ corepack pnpm exec wrangler deploy --dry-run
 
 本地验证记录（2026-05-02）：
 
-- `corepack pnpm test`：12 个测试文件、25 个测试通过。
+- `corepack pnpm test`：13 个测试文件、26 个测试通过。
 - `corepack pnpm typecheck`：通过。
 - `corepack pnpm lint`：通过。
 - `corepack pnpm build`：Astro static build 通过。
 - `corepack pnpm exec wrangler types --check`：`worker-configuration.d.ts` 已是最新。
 - `corepack pnpm exec wrangler d1 migrations apply DB --local`：无待应用 migration。
-- `corepack pnpm exec wrangler deploy --dry-run`：通过，Worker bundle 92.19 KiB，gzip 22.41 KiB。
+- `corepack pnpm exec wrangler deploy --dry-run`：通过，Worker bundle 93.22 KiB，gzip 22.63 KiB。
 
 ## 当前已知阻塞
 

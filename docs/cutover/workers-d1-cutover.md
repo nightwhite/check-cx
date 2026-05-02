@@ -103,10 +103,10 @@ corepack pnpm dlx tsx scripts/migration/import-d1.ts ./tmp/supabase-export > ./t
 导入前检查：
 
 ```bash
-rg -n "sk-|api_key|SUPABASE_SERVICE_ROLE_KEY" ./tmp/d1-import.sql
+rg -n "sk-[A-Za-z0-9_-]{8,}|SUPABASE_SERVICE_ROLE_KEY" ./tmp/d1-import.sql
 ```
 
-预期：不出现明文 provider key 或 Supabase secret。
+预期：无输出。不要扫描 `api_key` 这个普通列名前缀，因为 D1 SQL 会合法包含 `api_key_ciphertext`、`api_key_nonce`、`api_key_version`。如果某些 Provider key 不以 `sk-` 开头，按实际密钥前缀追加扫描规则。
 
 导入远端 D1：
 
