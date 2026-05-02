@@ -1,7 +1,10 @@
 import { checkProvider } from "../providers";
 import type { WorkerCheckResult, WorkerProviderConfig } from "../providers";
+import { loadEnabledProviderConfigs } from "../db/repositories";
 import { createJobLockRepository } from "./job-lock";
 import { persistCheckResults } from "./persist-check-results";
+import { pruneCheckHistory } from "./prune-check-history";
+import { runProviderChecks } from "./run-checks";
 import { updateAvailabilityRollups } from "./update-rollups";
 import { writeDashboardSnapshot } from "./write-dashboard-snapshot";
 
@@ -29,8 +32,12 @@ function getErrorMessage(error: unknown): string {
   return typeof error === "string" ? error : "unknown error";
 }
 
-async function defaultLoadConfigs(): Promise<WorkerProviderConfig[]> {
-  return [];
+function getConfigEncryptionKey(env: Env): string {
+  const value = (env as unknown as Record<string, unknown>).CONFIG_ENCRYPTION_KEY;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("CONFIG_ENCRYPTION_KEY is required");
+  }
+  return value;
 }
 
 function buildOwnerId(scheduledTime: number): string {
@@ -73,18 +80,17 @@ export async function runHealthCheckJob(
   }
 
   try {
-    const configs = await (options.loadConfigs ?? defaultLoadConfigs)(env);
+    const configs = options.loadConfigs
+      ? await options.loadConfigs(env)
+      : await loadEnabledProviderConfigs(env.DB, getConfigEncryptionKey(env));
     const runCheck = options.runCheck ?? checkProvider;
-    const results = await Promise.all(
-      configs
-        .filter((config) => !config.isMaintenance)
-        .map((config) => runCheck(config))
-    );
+    const results = await runProviderChecks(configs, runCheck);
     const finishedAtMs = now();
 
     await persistCheckResults(env.DB, results, finishedAtMs);
     await updateAvailabilityRollups(env.DB, results, finishedAtMs);
     await writeDashboardSnapshot(env.DB, results, finishedAtMs);
+    await pruneCheckHistory(env.DB, finishedAtMs);
 
     await repository.recordRun({
       id: crypto.randomUUID(),
