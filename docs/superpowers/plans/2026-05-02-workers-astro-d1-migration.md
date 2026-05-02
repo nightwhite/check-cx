@@ -118,10 +118,12 @@
 
 **使用 skills：** `shape`、`impeccable`、`audit`、`optimize`、`cloudflare:web-perf`
 
-- [ ] 创建 UI design brief。
-- [ ] 迁移 Dashboard UI 到 React island。
+- [x] 创建 UI design brief。
+- [x] 迁移 Dashboard UI 到 React island。
 - [ ] 把 group pages 折叠进单页。
 - [ ] 验证桌面、移动端、loading、empty、error、retry 状态。
+
+备注：当前已实现单页分组过滤；详情面板和原版完整拖拽排序仍需继续迁移。
 
 ### 任务 7：实现 Supabase 到 D1 数据迁移
 

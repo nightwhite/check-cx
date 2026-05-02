@@ -1,4 +1,5 @@
 ---
+import { DashboardIsland } from "../components/dashboard/dashboard-island";
 import "../styles/global.css";
 ---
 
@@ -11,41 +12,11 @@ import "../styles/global.css";
       name="description"
       content="Check CX AI provider health dashboard"
     />
+    <link rel="icon" type="image/png" href="/favicon.png" />
   </head>
   <body>
-    <main class="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6 md:py-16 lg:px-12">
-      <section class="flex flex-col gap-4">
-        <div class="inline-flex w-fit items-center rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
-          Cloudflare Workers Runtime
-        </div>
-        <div class="flex flex-col gap-3">
-          <h1 class="text-3xl font-semibold tracking-normal text-foreground sm:text-4xl">
-            Check CX
-          </h1>
-          <p class="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-            状态面板正在迁移到 Astro 单页和 Hono Worker API。当前 Worker
-            健康检查入口已可用，Dashboard 数据岛将在后续切片接入。
-          </p>
-        </div>
-      </section>
-
-      <section class="grid gap-4 md:grid-cols-3">
-        <div class="rounded-lg border border-border/60 bg-background/80 p-4 shadow-sm">
-          <div class="text-xs text-muted-foreground">Frontend</div>
-          <div class="mt-2 text-lg font-medium">Astro Static Assets</div>
-        </div>
-        <div class="rounded-lg border border-border/60 bg-background/80 p-4 shadow-sm">
-          <div class="text-xs text-muted-foreground">API</div>
-          <div class="mt-2 text-lg font-medium">Hono Worker</div>
-        </div>
-        <a
-          href="/api/health"
-          class="rounded-lg border border-border/60 bg-background/80 p-4 shadow-sm transition hover:border-foreground/40"
-        >
-          <div class="text-xs text-muted-foreground">Health</div>
-          <div class="mt-2 text-lg font-medium">/api/health</div>
-        </a>
-      </section>
+    <main class="mx-auto min-h-screen w-full max-w-[1600px] px-3 py-8 sm:px-6 md:py-16 lg:px-12">
+      <DashboardIsland client:load />
     </main>
   </body>
 </html>

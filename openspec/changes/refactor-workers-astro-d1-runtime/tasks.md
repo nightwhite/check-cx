@@ -40,8 +40,8 @@
 
 ## 7. Astro Single Page UI
 
-- [ ] 7.1 Create a UI design brief for the single-page status dashboard.
-- [ ] 7.2 Migrate Dashboard UI into React islands.
+- [x] 7.1 Create a UI design brief for the single-page status dashboard.
+- [x] 7.2 Migrate Dashboard UI into React islands.
 - [ ] 7.3 Fold group pages into group tabs/filter/query/detail panel.
 - [ ] 7.4 Verify desktop and mobile layout, loading, empty, error, and retry states.
 
