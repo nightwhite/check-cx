@@ -129,8 +129,8 @@
 
 **使用 skills：** `karpathy-guidelines`、`test-driven-development`、`systematic-debugging`
 
-- [ ] 添加 Supabase export、D1 import、provider key encryption scripts。
-- [ ] 转换 UUID、JSONB、timestamptz、enum 和 API key。
+- [x] 添加 Supabase export、D1 import、provider key encryption scripts。
+- [x] 转换 UUID、JSONB、timestamptz、enum 和 API key。
 - [ ] 迁移 latest 和最近 30 天历史。
 - [ ] 验证数量、关系和无明文 API key。
 

@@ -47,8 +47,8 @@
 
 ## 8. Data Migration
 
-- [ ] 8.1 Add Supabase export, D1 import, and provider key encryption scripts.
-- [ ] 8.2 Convert UUID, JSONB, timestamptz, enum, and API key fields.
+- [x] 8.1 Add Supabase export, D1 import, and provider key encryption scripts.
+- [x] 8.2 Convert UUID, JSONB, timestamptz, enum, and API key fields.
 - [ ] 8.3 Migrate the latest state and the last 30 days of history.
 - [ ] 8.4 Verify counts, relationships, and absence of plaintext API keys.
 
