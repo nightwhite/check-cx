@@ -48,6 +48,7 @@ export async function writeDashboardSnapshot(
   nowMs: number
 ): Promise<DashboardSnapshotWriteSummary> {
   const repository = createDashboardSnapshotRepository(db);
+  let writtenSnapshots = 0;
 
   for (const period of PERIODS) {
     const payloadJson = JSON.stringify(buildPayload(results, period, nowMs));
@@ -58,7 +59,31 @@ export async function writeDashboardSnapshot(
       etag: generateETag(payloadJson),
       generatedAtMs: nowMs,
     });
+    writtenSnapshots++;
   }
 
-  return { writtenSnapshots: PERIODS.length };
+  const groupNames = new Set(
+    results
+      .map((result) => result.groupName)
+      .filter((groupName): groupName is string => Boolean(groupName))
+  );
+
+  for (const groupName of groupNames) {
+    const groupResults = results.filter((result) => result.groupName === groupName);
+    for (const period of PERIODS) {
+      const payloadJson = JSON.stringify(
+        buildPayload(groupResults, period, nowMs)
+      );
+      await repository.upsert({
+        snapshotKey: `group:${groupName}`,
+        period,
+        payloadJson,
+        etag: generateETag(payloadJson),
+        generatedAtMs: nowMs,
+      });
+      writtenSnapshots++;
+    }
+  }
+
+  return { writtenSnapshots };
 }
