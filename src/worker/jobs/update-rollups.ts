@@ -1,4 +1,5 @@
 import type { WorkerCheckResult } from "../providers";
+import { runD1Batches } from "./d1-batch";
 
 export interface AvailabilityRollupUpdateSummary {
   updatedPeriods: number;
@@ -54,7 +55,7 @@ export async function updateAvailabilityRollups(
   }
 
   if (statements.length > 0) {
-    await db.batch(statements);
+    await runD1Batches(db, statements);
   }
 
   return { updatedPeriods };

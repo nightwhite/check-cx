@@ -16,7 +16,7 @@ interface LockRow {
 class FakeStatement implements JobLockStatementLike {
   constructor(
     private readonly db: FakeD1,
-    private readonly query: string,
+    readonly query: string,
     private readonly values: unknown[] = []
   ) {}
 
@@ -83,6 +83,9 @@ class FakeStatement implements JobLockStatementLike {
     }
 
     if (this.query.includes("INSERT INTO job_runs")) {
+      if (this.db.failRecordRun) {
+        throw new Error("recordRun failed");
+      }
       this.db.jobRuns++;
       return { meta: { changes: 1 } };
     }
@@ -94,13 +97,18 @@ class FakeStatement implements JobLockStatementLike {
 class FakeD1 implements JobLockExecutor {
   readonly locks = new Map<string, LockRow>();
   jobRuns = 0;
+  failRecordRun = false;
+  readonly batchSizes: number[] = [];
+  readonly batchQueries: string[] = [];
 
   prepare(query: string) {
     return new FakeStatement(this, query);
   }
 
   async batch(statements: FakeStatement[]) {
+    this.batchSizes.push(statements.length);
     for (const statement of statements) {
+      this.batchQueries.push(statement.query);
       await statement.run();
     }
     return [];
@@ -142,5 +150,70 @@ describe("runHealthCheckJob", () => {
 
     expect(db.jobRuns).toBe(1);
     expect(db.locks.get("health-check")?.locked_until_ms).toBe(2_000);
+  });
+
+  it("releases the cron lock when recording a successful run fails", async () => {
+    const db = new FakeD1();
+    db.failRecordRun = true;
+    const nowValues = [1_000, 2_000, 3_000];
+    const env = {
+      DB: db,
+      ASSETS: { fetch: async () => new Response("asset") },
+      CONFIG_ENCRYPTION_KEY: "1234567890123456",
+    } as unknown as Env;
+
+    await expect(
+      runHealthCheckJob(env, Date.parse("2026-05-03T01:01:00.000Z"), {
+        ownerId: "owner-1",
+        loadConfigs: async () => [],
+        now: () => nowValues.shift() ?? 3_000,
+      })
+    ).resolves.toMatchObject({
+      status: "failed",
+      ownerId: "owner-1",
+    });
+
+    expect(db.locks.get("health-check")?.locked_until_ms).toBe(3_000);
+  });
+
+  it("does not persist maintenance results into history or rollups", async () => {
+    const db = new FakeD1();
+    const env = {
+      DB: db,
+      ASSETS: { fetch: async () => new Response("asset") },
+      CONFIG_ENCRYPTION_KEY: "1234567890123456",
+    } as unknown as Env;
+
+    await runHealthCheckJob(env, Date.parse("2026-05-03T01:01:00.000Z"), {
+      ownerId: "owner-1",
+      loadConfigs: async () => [
+        {
+          id: "config-1",
+          name: "OpenAI",
+          type: "openai",
+          endpoint: "https://api.openai.com/v1/chat/completions",
+          model: "gpt-4o-mini",
+          apiKey: "",
+          isMaintenance: true,
+        },
+      ],
+      runCheck: async () => ({
+        id: "config-1",
+        name: "OpenAI",
+        type: "openai",
+        endpoint: "https://api.openai.com/v1/chat/completions",
+        model: "gpt-4o-mini",
+        status: "maintenance",
+        latencyMs: null,
+        pingLatencyMs: null,
+        checkedAt: "2026-05-03T01:01:00.000Z",
+        message: "维护模式",
+      }),
+      now: () => 1_000,
+    });
+
+    expect(db.batchQueries.filter((query) => query.includes("check_latest"))).toHaveLength(1);
+    expect(db.batchQueries.filter((query) => query.includes("check_history"))).toHaveLength(0);
+    expect(db.batchQueries.filter((query) => query.includes("availability_rollups"))).toHaveLength(0);
   });
 });

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildAllD1ImportStatements,
+  buildCheckConfigStatements,
   serializeD1Statements,
 } from "../../scripts/migration/import-d1";
 
@@ -84,6 +85,37 @@ describe("D1 import statements", () => {
       expect(sql).toContain("INSERT INTO check_latest");
       expect(sql).not.toContain("sk-plain");
       expect(sql).not.toContain("-- params:");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows keyless maintenance configs without writing a plaintext key", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "check-cx-import-"));
+    try {
+      await writeJsonl(dir, "check_configs", [
+        {
+          id: "config-maintenance",
+          name: "Maintenance",
+          type: "openai",
+          model_id: "model-1",
+          endpoint: "https://api.openai.com/v1/chat/completions",
+          api_key: "",
+          enabled: true,
+          is_maintenance: true,
+          group_name: "core",
+          created_at: "2026-05-02T00:00:00.000Z",
+          updated_at: "2026-05-02T00:00:00.000Z",
+        },
+      ]);
+
+      const statements = await buildCheckConfigStatements(
+        dir,
+        "0123456789abcdef0123456789abcdef"
+      );
+
+      expect(statements).toHaveLength(1);
+      expect(statements[0].params).not.toContain("");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

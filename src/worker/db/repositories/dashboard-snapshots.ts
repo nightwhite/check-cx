@@ -33,6 +33,15 @@ const toRecord = (row: DashboardSnapshotRow): DashboardSnapshotRecord => ({
   generatedAtMs: row.generated_at_ms,
 });
 
+async function runBatches(
+  db: D1Executor,
+  statements: D1StatementLike[]
+): Promise<void> {
+  for (let index = 0; index < statements.length; index += 100) {
+    await db.batch?.(statements.slice(index, index + 100));
+  }
+}
+
 function prepareUpsert(db: D1Executor, record: DashboardSnapshotRecord) {
   return db
     .prepare(
@@ -65,7 +74,7 @@ export function createDashboardSnapshotRepository(db: D1Executor) {
 
       const statements = records.map((record) => prepareUpsert(db, record));
       if (db.batch) {
-        await db.batch(statements);
+        await runBatches(db, statements);
         return;
       }
 

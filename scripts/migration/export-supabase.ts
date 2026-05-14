@@ -45,19 +45,18 @@ export async function exportTable(
 ) {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   let offset = 0;
+  const checkHistoryCutoff =
+    table === "check_history"
+      ? new Date((options.nowMs ?? Date.now()) - CHECK_HISTORY_RETENTION_MS).toISOString()
+      : null;
   await mkdir(outputDir, { recursive: true });
   const file = await open(join(outputDir, `${table}.jsonl`), "w");
 
   try {
     for (;;) {
       let query = client.from(table).select("*");
-      if (table === "check_history") {
-        query = query.gte(
-          "checked_at",
-          new Date(
-            (options.nowMs ?? Date.now()) - CHECK_HISTORY_RETENTION_MS
-          ).toISOString()
-        );
+      if (checkHistoryCutoff) {
+        query = query.gte("checked_at", checkHistoryCutoff);
       }
       query = query.order(table === "check_history" ? "checked_at" : "id", {
         ascending: true,

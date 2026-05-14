@@ -44,6 +44,10 @@ function buildOwnerId(scheduledTime: number): string {
   return `cron-${scheduledTime}-${crypto.randomUUID()}`;
 }
 
+function isHistoryResult(result: WorkerCheckResult): boolean {
+  return result.status !== "maintenance";
+}
+
 export function shouldPruneCheckHistory(nowMs: number): boolean {
   return new Date(nowMs).getUTCMinutes() === 0;
 }
@@ -89,54 +93,65 @@ export async function runHealthCheckJob(
       : await loadEnabledProviderConfigs(env.DB, getConfigEncryptionKey(env));
     const runCheck = options.runCheck ?? checkProvider;
     const results = await runProviderChecks(configs, runCheck);
+    const historyResults = results.filter(isHistoryResult);
     const finishedAtMs = now();
 
-    await persistCheckResults(env.DB, results, finishedAtMs);
-    await updateAvailabilityRollups(env.DB, results, finishedAtMs);
+    await persistCheckResults(env.DB, results, finishedAtMs, {
+      shouldWriteHistory: isHistoryResult,
+    });
+    await updateAvailabilityRollups(env.DB, historyResults, finishedAtMs);
     await writeDashboardSnapshot(env.DB, results, finishedAtMs);
     if (shouldPruneCheckHistory(scheduledTime)) {
       await pruneCheckHistory(env.DB, finishedAtMs);
     }
 
-    await repository.recordRun({
-      id: crypto.randomUUID(),
-      jobName: JOB_NAME,
-      ownerId,
-      status: "success",
-      startedAtMs,
-      finishedAtMs,
-      checkedCount: results.length,
-      errorMessage: null,
-    });
-    await repository.release({
-      jobName: JOB_NAME,
-      ownerId,
-      nowMs: finishedAtMs,
-    });
+    try {
+      await repository.recordRun({
+        id: crypto.randomUUID(),
+        jobName: JOB_NAME,
+        ownerId,
+        status: "success",
+        startedAtMs,
+        finishedAtMs,
+        checkedCount: results.length,
+        errorMessage: null,
+      });
 
-    return {
-      status: "success",
-      checkedCount: results.length,
-      ownerId,
-      errorMessage: null,
-    };
+      return {
+        status: "success",
+        checkedCount: results.length,
+        ownerId,
+        errorMessage: null,
+      };
+    } finally {
+      await repository.release({
+        jobName: JOB_NAME,
+        ownerId,
+        nowMs: finishedAtMs,
+      });
+    }
   } catch (error) {
     const errorMessage = getErrorMessage(error);
-    await repository.recordRun({
-      id: crypto.randomUUID(),
-      jobName: JOB_NAME,
-      ownerId,
-      status: "failed",
-      startedAtMs,
-      finishedAtMs: now(),
-      checkedCount: 0,
-      errorMessage,
-    });
-    await repository.release({
-      jobName: JOB_NAME,
-      ownerId,
-      nowMs: now(),
-    });
+    try {
+      await repository.recordRun({
+        id: crypto.randomUUID(),
+        jobName: JOB_NAME,
+        ownerId,
+        status: "failed",
+        startedAtMs,
+        finishedAtMs: now(),
+        checkedCount: 0,
+        errorMessage,
+      });
+    } catch {
+      // The owner lock must not outlive the active job when job_runs writing fails.
+    } finally {
+      await repository.release({
+        jobName: JOB_NAME,
+        ownerId,
+        nowMs: now(),
+      });
+    }
 
     return {
       status: "failed",

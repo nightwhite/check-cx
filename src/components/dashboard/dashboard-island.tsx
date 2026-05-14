@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCcw, Search } from "lucide-react";
 
 import type { AvailabilityPeriod, DashboardData, ProviderTimeline } from "@/lib/types";
@@ -62,36 +62,90 @@ function matchesSearch(timeline: ProviderTimeline, query: string) {
   return target.includes(query.toLowerCase());
 }
 
+function getInitialGroup() {
+  if (typeof window === "undefined") {
+    return "all";
+  }
+
+  const groupFromQuery = new URLSearchParams(window.location.search).get("group");
+  if (groupFromQuery) {
+    return groupFromQuery;
+  }
+
+  const match = window.location.pathname.match(/^\/group\/([^/]+)\/?$/);
+  if (!match) {
+    return "all";
+  }
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 export function DashboardIsland() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [period, setPeriod] = useState<AvailabilityPeriod>("7d");
   const [query, setQuery] = useState("");
-  const [group, setGroup] = useState("all");
+  const [group, setGroup] = useState(getInitialGroup);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const loadDashboard = useCallback(async () => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setIsLoading(true);
     try {
       const response = await fetch(`/api/dashboard?trendPeriod=${period}`, {
         headers: { Accept: "application/json" },
+        signal: controller.signal,
       });
       if (!response.ok) {
         throw new Error(`Dashboard request failed: ${response.status}`);
       }
       const nextData = (await response.json()) as DashboardData;
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
       setData(nextData);
       setErrorMessage(null);
     } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
       setErrorMessage(error instanceof Error ? error.message : "加载失败");
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [period]);
 
   useEffect(() => {
     loadDashboard().catch(() => undefined);
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, [loadDashboard]);
+
+  useEffect(() => {
+    const intervalMs = data?.pollIntervalMs;
+    if (!intervalMs || intervalMs <= 0) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      loadDashboard().catch(() => undefined);
+    }, intervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [data?.pollIntervalMs, loadDashboard]);
 
   const groups = useMemo(() => getGroups(data), [data]);
   const timelines = useMemo(() => {

@@ -16,7 +16,8 @@ const PERIOD_DAYS: Record<(typeof PERIODS)[number], number> = {
   "15d": 15,
   "30d": 30,
 };
-const HISTORY_ID_CHUNK_SIZE = 900;
+const HISTORY_ID_CHUNK_SIZE = 90;
+const HISTORY_LIMIT_PER_CONFIG = 60;
 
 interface GroupInfoRow {
   group_name: string;
@@ -37,6 +38,35 @@ interface CheckHistoryRow {
   checked_at_ms: number;
   message: string | null;
   log_message: string | null;
+}
+
+interface AvailabilityRollupRow {
+  config_id: string;
+  period: (typeof PERIODS)[number];
+  total_checks: number;
+  operational_count: number;
+}
+
+interface AvailabilityStat {
+  period: (typeof PERIODS)[number];
+  totalChecks: number;
+  operationalCount: number;
+  availabilityPct: number | null;
+}
+
+interface OfficialStatusRow {
+  provider: string;
+  status: "operational" | "degraded" | "down" | "unknown";
+  message: string;
+  affected_components_json: string | null;
+  checked_at_ms: number;
+}
+
+interface OfficialStatusResult {
+  status: "operational" | "degraded" | "down" | "unknown";
+  message: string;
+  checkedAt: string;
+  affectedComponents?: string[];
 }
 
 interface D1StatementWithAll extends D1StatementLike {
@@ -75,16 +105,43 @@ function mergeTimelineItems(
   );
 }
 
+function toGroupInfoSummaries(groupInfoMap: Map<string, GroupInfoRow>) {
+  return [...groupInfoMap.values()]
+    .map((info) => ({
+      groupName: info.group_name,
+      websiteUrl: info.website_url ?? null,
+      tags: info.tags ?? "",
+    }))
+    .sort((left, right) => left.groupName.localeCompare(right.groupName));
+}
+
+function withOfficialStatus(
+  result: WorkerCheckResult,
+  officialStatusByType: Map<WorkerCheckResult["type"], OfficialStatusResult>
+): WorkerCheckResult {
+  const officialStatus = officialStatusByType.get(result.type);
+  if (!officialStatus) {
+    return result;
+  }
+
+  return { ...result, officialStatus };
+}
+
 function buildPayload(
   results: WorkerCheckResult[],
   period: string,
   nowMs: number,
-  historyByConfig: Map<string, WorkerCheckResult[]>
+  historyByConfig: Map<string, WorkerCheckResult[]>,
+  groupInfos: ReturnType<typeof toGroupInfoSummaries>,
+  availabilityStats: Record<string, AvailabilityStat[]>,
+  officialStatusByType: Map<WorkerCheckResult["type"], OfficialStatusResult>
 ) {
   const providerTimelines = results.map((result) => ({
     id: result.id,
-    items: mergeTimelineItems(result, historyByConfig),
-    latest: result,
+    items: mergeTimelineItems(result, historyByConfig).map((item) =>
+      withOfficialStatus(item, officialStatusByType)
+    ),
+    latest: withOfficialStatus(result, officialStatusByType),
   }));
   const lastUpdated =
     results.length > 0
@@ -96,12 +153,12 @@ function buildPayload(
 
   return {
     providerTimelines,
-    groupInfos: [],
+    groupInfos,
     lastUpdated,
     total: providerTimelines.length,
     pollIntervalLabel: "60 秒",
     pollIntervalMs: 60_000,
-    availabilityStats: {},
+    availabilityStats,
     trendPeriod: period,
     generatedAt: nowMs,
   };
@@ -113,9 +170,19 @@ function buildGroupPayload(
   period: string,
   nowMs: number,
   historyByConfig: Map<string, WorkerCheckResult[]>,
+  availabilityStats: Record<string, AvailabilityStat[]>,
+  officialStatusByType: Map<WorkerCheckResult["type"], OfficialStatusResult>,
   info?: GroupInfoRow
 ) {
-  const payload = buildPayload(results, period, nowMs, historyByConfig);
+  const payload = buildPayload(
+    results,
+    period,
+    nowMs,
+    historyByConfig,
+    [],
+    availabilityStats,
+    officialStatusByType
+  );
   return {
     groupName,
     displayName: groupName,
@@ -137,6 +204,93 @@ async function loadGroupInfoMap(db: DashboardSnapshotExecutor) {
     .prepare("SELECT group_name, website_url, tags FROM group_info")
     .all<GroupInfoRow>();
   return new Map((result.results ?? []).map((row) => [row.group_name, row]));
+}
+
+function buildAvailabilityStats(rows: AvailabilityRollupRow[]) {
+  const stats: Record<string, AvailabilityStat[]> = {};
+  for (const row of rows) {
+    const entry: AvailabilityStat = {
+      period: row.period,
+      totalChecks: row.total_checks,
+      operationalCount: row.operational_count,
+      availabilityPct:
+        row.total_checks > 0
+          ? Math.round((row.operational_count / row.total_checks) * 10_000) / 100
+          : null,
+    };
+    stats[row.config_id] = [...(stats[row.config_id] ?? []), entry];
+  }
+
+  for (const entries of Object.values(stats)) {
+    entries.sort(
+      (left, right) => PERIODS.indexOf(left.period) - PERIODS.indexOf(right.period)
+    );
+  }
+
+  return stats;
+}
+
+async function loadAvailabilityStats(
+  db: DashboardSnapshotExecutor,
+  results: WorkerCheckResult[]
+) {
+  const ids = results.map((result) => result.id);
+  const rows: AvailabilityRollupRow[] = [];
+  for (let index = 0; index < ids.length; index += HISTORY_ID_CHUNK_SIZE) {
+    const chunk = ids.slice(index, index + HISTORY_ID_CHUNK_SIZE);
+    if (chunk.length === 0) {
+      continue;
+    }
+    const placeholders = chunk.map(() => "?").join(", ");
+    const result = await db
+      .prepare(
+        `SELECT config_id, period, total_checks, operational_count
+         FROM availability_rollups
+         WHERE config_id IN (${placeholders})
+         ORDER BY config_id, period`
+      )
+      .bind(...chunk)
+      .all<AvailabilityRollupRow>();
+    rows.push(...(result.results ?? []));
+  }
+
+  return buildAvailabilityStats(rows);
+}
+
+function parseAffectedComponents(value: string | null): string[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (Array.isArray(parsed)) {
+      const items = parsed.filter((item): item is string => typeof item === "string");
+      return items.length > 0 ? items : undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+async function loadOfficialStatuses(db: DashboardSnapshotExecutor) {
+  const rows = await db
+    .prepare(
+      `SELECT provider, status, message, affected_components_json, checked_at_ms
+       FROM official_status_snapshots`
+    )
+    .all<OfficialStatusRow>();
+  return new Map(
+    (rows.results ?? []).map((row) => [
+      row.provider as WorkerCheckResult["type"],
+      {
+        status: row.status,
+        message: row.message,
+        checkedAt: new Date(row.checked_at_ms).toISOString(),
+        affectedComponents: parseAffectedComponents(row.affected_components_json),
+      },
+    ])
+  );
 }
 
 function toHistoryResult(row: CheckHistoryRow): WorkerCheckResult {
@@ -190,12 +344,25 @@ async function loadHistoryByConfig(
          FROM check_history h
          JOIN check_configs c ON c.id = h.config_id
          JOIN check_models m ON m.id = c.model_id
-         WHERE h.config_id IN (${placeholders})
-           AND h.checked_at_ms >= ?
-           AND h.checked_at_ms <= ?
+         JOIN (
+           SELECT id
+           FROM (
+             SELECT
+               id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY config_id
+                 ORDER BY checked_at_ms DESC
+               ) AS row_number
+             FROM check_history
+             WHERE config_id IN (${placeholders})
+               AND checked_at_ms >= ?
+               AND checked_at_ms <= ?
+           )
+           WHERE row_number <= ?
+         ) limited ON limited.id = h.id
          ORDER BY h.config_id, h.checked_at_ms ASC`
       )
-      .bind(...chunk, cutoffMs, nowMs)
+      .bind(...chunk, cutoffMs, nowMs, HISTORY_LIMIT_PER_CONFIG)
       .all<CheckHistoryRow>();
 
     for (const row of rows.results ?? []) {
@@ -238,6 +405,10 @@ export async function writeDashboardSnapshot(
   const historyByPeriod = new Map<string, Map<string, WorkerCheckResult[]>>();
   const records: DashboardSnapshotRecord[] = [];
   const historyByConfig = await loadHistoryByConfig(db, results, nowMs);
+  const groupInfoMap = await loadGroupInfoMap(db);
+  const groupInfos = toGroupInfoSummaries(groupInfoMap);
+  const availabilityStats = await loadAvailabilityStats(db, results);
+  const officialStatusByType = await loadOfficialStatuses(db);
 
   for (const period of PERIODS) {
     const periodHistoryByConfig = filterHistoryByPeriod(
@@ -247,7 +418,15 @@ export async function writeDashboardSnapshot(
     );
     historyByPeriod.set(period, periodHistoryByConfig);
     const payloadJson = JSON.stringify(
-      buildPayload(results, period, nowMs, periodHistoryByConfig)
+      buildPayload(
+        results,
+        period,
+        nowMs,
+        periodHistoryByConfig,
+        groupInfos,
+        availabilityStats,
+        officialStatusByType
+      )
     );
     records.push({
       snapshotKey: "dashboard",
@@ -263,8 +442,6 @@ export async function writeDashboardSnapshot(
       .map((result) => result.groupName)
       .filter((groupName): groupName is string => Boolean(groupName))
   );
-  const groupInfoMap = await loadGroupInfoMap(db);
-
   for (const groupName of groupNames) {
     const groupResults = results.filter((result) => result.groupName === groupName);
     for (const period of PERIODS) {
@@ -275,6 +452,8 @@ export async function writeDashboardSnapshot(
           period,
           nowMs,
           historyByPeriod.get(period) ?? new Map(),
+          availabilityStats,
+          officialStatusByType,
           groupInfoMap.get(groupName)
         )
       );

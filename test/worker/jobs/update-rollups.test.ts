@@ -74,4 +74,21 @@ describe("updateAvailabilityRollups", () => {
     expect(db.batchCalls).toHaveLength(1);
     expect(db.batchCalls[0]).toHaveLength(3);
   });
+
+  it("chunks D1 batches to at most 100 statements", async () => {
+    const db = new FakeD1();
+
+    await updateAvailabilityRollups(
+      db as unknown as Parameters<typeof updateAvailabilityRollups>[0],
+      Array.from({ length: 40 }, (_, index) => ({
+        ...result,
+        id: `config-${index}`,
+      })),
+      1_775_174_400_000
+    );
+
+    expect(db.batchCalls.length).toBeGreaterThan(1);
+    expect(db.batchCalls.every((call) => call.length <= 100)).toBe(true);
+    expect(db.batchCalls.reduce((sum, call) => sum + call.length, 0)).toBe(120);
+  });
 });

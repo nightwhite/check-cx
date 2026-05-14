@@ -1,44 +1,58 @@
 import type { WorkerCheckResult } from "../providers";
+import { runD1Batches } from "./d1-batch";
 
 interface D1BatchExecutor {
   prepare(query: string): D1PreparedStatement;
   batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
 }
 
+interface PersistCheckResultsOptions {
+  shouldWriteHistory?: (result: WorkerCheckResult) => boolean;
+}
+
+function shouldPersistHistoryByDefault(): true {
+  return true;
+}
+
 export async function persistCheckResults(
   db: D1BatchExecutor,
   results: WorkerCheckResult[],
-  nowMs: number
+  nowMs: number,
+  options: PersistCheckResultsOptions = {}
 ): Promise<void> {
   const statements: D1PreparedStatement[] = [];
+  const shouldWriteHistory =
+    options.shouldWriteHistory ?? shouldPersistHistoryByDefault;
 
   for (const result of results) {
     const checkedAtMs = Date.parse(result.checkedAt);
-    statements.push(
-      db
-        .prepare(
-          `INSERT INTO check_history (
-             id,
-             config_id,
-             status,
-             latency_ms,
-             ping_latency_ms,
-             checked_at_ms,
-             message,
-             log_message
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          crypto.randomUUID(),
-          result.id,
-          result.status,
-          result.latencyMs,
-          result.pingLatencyMs,
-          checkedAtMs,
-          result.message,
-          result.logMessage ?? null
-        )
-    );
+    if (shouldWriteHistory(result)) {
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO check_history (
+               id,
+               config_id,
+               status,
+               latency_ms,
+               ping_latency_ms,
+               checked_at_ms,
+               message,
+               log_message
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(
+            crypto.randomUUID(),
+            result.id,
+            result.status,
+            result.latencyMs,
+            result.pingLatencyMs,
+            checkedAtMs,
+            result.message,
+            result.logMessage ?? null
+          )
+      );
+    }
 
     statements.push(
       db
@@ -76,6 +90,6 @@ export async function persistCheckResults(
   }
 
   if (statements.length > 0) {
-    await db.batch(statements);
+    await runD1Batches(db, statements);
   }
 }

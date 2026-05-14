@@ -14,6 +14,21 @@ interface GroupInfoRow {
   tags: string | null;
 }
 
+interface AvailabilityRow {
+  config_id: string;
+  period: string;
+  total_checks: number;
+  operational_count: number;
+}
+
+interface OfficialStatusRow {
+  provider: string;
+  status: string;
+  message: string;
+  affected_components_json: string | null;
+  checked_at_ms: number;
+}
+
 class FakeStatement implements D1StatementLike {
   constructor(
     private readonly db: FakeD1,
@@ -37,7 +52,16 @@ class FakeStatement implements D1StatementLike {
   async all<T>() {
     if (this.query.includes("FROM check_history")) {
       this.db.historyQueryCount++;
+      this.db.lastHistoryQuery = this.query;
       return { results: this.db.historyRows as T[] };
+    }
+
+    if (this.query.includes("FROM availability_rollups")) {
+      return { results: this.db.availabilityRows as T[] };
+    }
+
+    if (this.query.includes("FROM official_status_snapshots")) {
+      return { results: this.db.officialStatusRows as T[] };
     }
 
     return { results: this.db.groupInfos as T[] };
@@ -57,6 +81,7 @@ class FakeD1 implements D1Executor {
   historyQueryCount = 0;
   batchCalls = 0;
   maxBindCount = 0;
+  lastHistoryQuery = "";
   readonly historyRows = [
     {
       config_id: "core-1",
@@ -106,6 +131,29 @@ class FakeD1 implements D1Executor {
       group_name: "core",
       website_url: "https://core.example",
       tags: "prod,core",
+    },
+  ];
+  readonly availabilityRows: AvailabilityRow[] = [
+    {
+      config_id: "core-1",
+      period: "7d",
+      total_checks: 10,
+      operational_count: 9,
+    },
+    {
+      config_id: "core-1",
+      period: "30d",
+      total_checks: 30,
+      operational_count: 27,
+    },
+  ];
+  readonly officialStatusRows: OfficialStatusRow[] = [
+    {
+      provider: "openai",
+      status: "degraded",
+      message: "OpenAI incident",
+      affected_components_json: "[\"API\"]",
+      checked_at_ms: Date.parse("2026-05-02T00:00:00.000Z"),
     },
   ];
 
@@ -174,6 +222,33 @@ describe("writeDashboardSnapshot", () => {
     const coreTimeline = dashboardPayload.providerTimelines.find(
       (timeline: { id: string }) => timeline.id === "core-1"
     );
+    expect(dashboardPayload.groupInfos).toEqual([
+      {
+        groupName: "core",
+        websiteUrl: "https://core.example",
+        tags: "prod,core",
+      },
+    ]);
+    expect(dashboardPayload.availabilityStats["core-1"]).toEqual([
+      {
+        period: "7d",
+        totalChecks: 10,
+        operationalCount: 9,
+        availabilityPct: 90,
+      },
+      {
+        period: "30d",
+        totalChecks: 30,
+        operationalCount: 27,
+        availabilityPct: 90,
+      },
+    ]);
+    expect(coreTimeline.latest.officialStatus).toEqual({
+      status: "degraded",
+      message: "OpenAI incident",
+      affectedComponents: ["API"],
+      checkedAt: "2026-05-02T00:00:00.000Z",
+    });
     expect(coreTimeline.items.map((item: { status: string }) => item.status)).toEqual([
       "failed",
       "operational",
@@ -207,6 +282,7 @@ describe("writeDashboardSnapshot", () => {
     ).resolves.toEqual({ writtenSnapshots: 3 });
 
     expect(db.historyQueryCount).toBeGreaterThan(1);
-    expect(db.maxBindCount).toBeLessThanOrEqual(999);
+    expect(db.maxBindCount).toBeLessThanOrEqual(100);
+    expect(db.lastHistoryQuery).toContain("ROW_NUMBER()");
   });
 });

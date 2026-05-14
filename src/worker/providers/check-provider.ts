@@ -12,6 +12,31 @@ import type {
 
 const DEFAULT_TIMEOUT_MS = 45_000;
 const DEGRADED_THRESHOLD_MS = 6_000;
+const RESERVED_METADATA_KEYS = new Set([
+  "contents",
+  "generationConfig",
+  "input",
+  "max_output_tokens",
+  "max_tokens",
+  "messages",
+  "model",
+]);
+const GOOGLE_GENERATIVE_API_REGEX =
+  /\/v\d+\w*\/models\/[^/:]+:(generateContent|streamGenerateContent)\/?$/;
+const REASONING_EFFORT_ALIASES: Record<string, "low" | "medium" | "high"> = {
+  mini: "low",
+  minimal: "low",
+  low: "low",
+  medium: "medium",
+  high: "high",
+};
+const REASONING_MODEL_PATTERNS = [
+  /codex/i,
+  /\bgpt-5/i,
+  /\bo[1-9](?:-|$)/i,
+  /\bdeepseek-r1/i,
+  /\bqwq/i,
+];
 
 export interface CheckProviderOptions {
   challenge?: Challenge;
@@ -43,61 +68,111 @@ function buildBaseResult(
 }
 
 function buildHeaders(config: WorkerProviderConfig): Headers {
-  const headers = new Headers(config.requestHeaders ?? undefined);
+  const headers = new Headers();
   headers.set("content-type", "application/json");
 
   if (config.type === "anthropic") {
     headers.set("x-api-key", config.apiKey);
-    if (!headers.has("anthropic-version")) {
-      headers.set("anthropic-version", "2023-06-01");
-    }
-    return headers;
+    headers.set("anthropic-version", "2023-06-01");
+  } else if (config.type === "openai" || isOpenAICompatibleGemini(config)) {
+    headers.set("authorization", `Bearer ${config.apiKey}`);
   }
 
-  if (config.type === "openai") {
-    headers.set("authorization", `Bearer ${config.apiKey}`);
+  for (const [key, value] of Object.entries(config.requestHeaders ?? {})) {
+    headers.set(key, value);
   }
 
   return headers;
 }
 
-function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
-  if (config.type === "anthropic") {
+function filterMetadata(
+  metadata: Record<string, unknown> | null | undefined
+): Record<string, unknown> {
+  if (!metadata) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([key]) => !RESERVED_METADATA_KEYS.has(key))
+  );
+}
+
+function isGoogleGenerativeEndpoint(endpoint: string): boolean {
+  return GOOGLE_GENERATIVE_API_REGEX.test(endpoint.split("?")[0]);
+}
+
+function isOpenAICompatibleGemini(config: WorkerProviderConfig): boolean {
+  return config.type === "gemini" && !isGoogleGenerativeEndpoint(config.endpoint);
+}
+
+function parseModelDirective(model: string) {
+  const trimmed = model.trim();
+  const directiveMatch = trimmed.match(
+    /^(.*?)[@#](mini|minimal|low|medium|high)$/i
+  );
+  if (directiveMatch) {
+    const [, modelId, effortKey] = directiveMatch;
     return {
-      model: config.model,
-      max_tokens: 1,
-      messages: [{ role: "user", content: challenge.prompt }],
-      ...(config.metadata ?? {}),
+      modelId: modelId.trim() || trimmed,
+      reasoningEffort: REASONING_EFFORT_ALIASES[effortKey.toLowerCase()],
     };
   }
 
-  if (config.type === "gemini") {
+  const isReasoningModel = REASONING_MODEL_PATTERNS.some((pattern) =>
+    pattern.test(trimmed)
+  );
+  return {
+    modelId: trimmed,
+    reasoningEffort: isReasoningModel ? "medium" : undefined,
+  };
+}
+
+function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
+  const metadata = filterMetadata(config.metadata);
+  const { modelId, reasoningEffort } = parseModelDirective(config.model);
+
+  if (config.type === "anthropic") {
     return {
+      ...metadata,
+      model: modelId,
+      max_tokens: 1,
+      messages: [{ role: "user", content: challenge.prompt }],
+    };
+  }
+
+  if (config.type === "gemini" && isGoogleGenerativeEndpoint(config.endpoint)) {
+    return {
+      ...metadata,
       contents: [{ role: "user", parts: [{ text: challenge.prompt }] }],
       generationConfig: { maxOutputTokens: 1 },
-      ...(config.metadata ?? {}),
     };
   }
 
   if (/\/responses\/?$/.test(config.endpoint.split("?")[0])) {
     return {
-      model: config.model,
+      ...metadata,
+      model: modelId,
       input: challenge.prompt,
       max_output_tokens: 1,
-      ...(config.metadata ?? {}),
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     };
   }
 
   return {
-    model: config.model,
+    ...metadata,
+    model: modelId,
     messages: [{ role: "user", content: challenge.prompt }],
     max_tokens: 1,
-    ...(config.metadata ?? {}),
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
   };
 }
 
 function buildRequestUrl(config: WorkerProviderConfig): string {
-  if (config.type !== "gemini" || !config.apiKey) {
+  if (
+    config.type !== "gemini" ||
+    !isGoogleGenerativeEndpoint(config.endpoint) ||
+    !config.apiKey
+  ) {
     return config.endpoint;
   }
 

@@ -22,4 +22,24 @@ export const internalRoutes = new Hono<{ Bindings: Env }>().get(
     const result = await c.env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
     return c.json({ ok: result?.ok === 1 });
   }
-);
+).get("/cache-metrics", async (c) => {
+  if (!isAuthorized(c)) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  const snapshots = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM dashboard_snapshots"
+  ).first<{ count: number }>();
+
+  return c.json({
+    workerRuntime: "cloudflare-workers",
+    dashboardSnapshots: {
+      count: snapshots?.count ?? 0,
+    },
+    combinedDbCache: {
+      hits: 0,
+      misses: 0,
+    },
+    generatedAt: new Date().toISOString(),
+  });
+});

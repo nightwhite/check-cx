@@ -38,6 +38,16 @@ function updatedAtMs(row: Record<string, unknown>): number {
   return toEpochMs(row.updated_at as string | null) ?? createdAtMs(row);
 }
 
+function apiKeyForImport(row: Record<string, unknown>): string {
+  if (typeof row.api_key === "string" && row.api_key.length > 0) {
+    return row.api_key;
+  }
+  if (row.is_maintenance === true) {
+    return "maintenance-keyless-config";
+  }
+  return requireString(row.api_key, "api_key");
+}
+
 export async function buildTemplateStatements(
   inputDir: string
 ): Promise<D1ImportStatement[]> {
@@ -85,10 +95,7 @@ export async function buildCheckConfigStatements(
   const statements: D1ImportStatement[] = [];
 
   for (const row of rows) {
-    const encrypted = await encryptProviderKey(
-      requireString(row.api_key, "api_key"),
-      encryptionKey
-    );
+    const encrypted = await encryptProviderKey(apiKeyForImport(row), encryptionKey);
     statements.push({
       sql: `INSERT INTO check_configs (
         id, name, type, model_id, endpoint, api_key_ciphertext, api_key_nonce,

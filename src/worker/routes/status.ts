@@ -77,7 +77,8 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
      LEFT JOIN check_latest l ON l.config_id = c.id
      WHERE c.enabled = 1
        AND (?1 IS NULL OR c.group_name = ?1)
-       AND (?2 IS NULL OR m.model = ?2)`
+       AND (?2 IS NULL OR m.model = ?2)
+     ORDER BY c.id`
   )
     .bind(groupFilter, modelFilter)
     .all<ProviderStatusRow>();

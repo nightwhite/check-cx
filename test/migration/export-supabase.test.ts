@@ -10,6 +10,7 @@ class FakeQuery {
   constructor(
     private readonly rows: Array<Record<string, unknown>>,
     private readonly ranges: Array<[number, number]>,
+    private readonly gteValues: string[],
     private readonly onRange?: (from: number) => Promise<void>
   ) {}
 
@@ -17,7 +18,8 @@ class FakeQuery {
     return this;
   }
 
-  gte() {
+  gte(_column: string, value: string) {
+    this.gteValues.push(value);
     return this;
   }
 
@@ -37,6 +39,7 @@ class FakeQuery {
 
 class FakeSupabase implements SupabaseLike {
   readonly ranges: Array<[number, number]> = [];
+  readonly gteValues: string[] = [];
 
   constructor(
     private readonly rows: Array<Record<string, unknown>>,
@@ -44,7 +47,7 @@ class FakeSupabase implements SupabaseLike {
   ) {}
 
   from() {
-    return new FakeQuery(this.rows, this.ranges, this.onRange);
+    return new FakeQuery(this.rows, this.ranges, this.gteValues, this.onRange);
   }
 }
 
@@ -95,6 +98,22 @@ describe("exportTable", () => {
       await exportTable(dir, "check_configs", client, { pageSize: 2 });
 
       expect(firstPageWrittenBeforeSecondFetch).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses one stable check_history retention cutoff across pages", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "check-cx-export-"));
+    const client = new FakeSupabase([{ id: 1 }, { id: 2 }, { id: 3 }]);
+
+    try {
+      await exportTable(dir, "check_history", client, {
+        pageSize: 2,
+        nowMs: Date.parse("2026-05-02T00:00:00.000Z"),
+      });
+
+      expect(new Set(client.gteValues)).toHaveLength(1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

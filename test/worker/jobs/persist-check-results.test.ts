@@ -78,4 +78,39 @@ describe("persistCheckResults", () => {
       expect.stringContaining("INSERT INTO check_latest"),
     ]);
   });
+
+  it("chunks D1 batches to at most 100 statements", async () => {
+    const db = new FakeD1();
+
+    await persistCheckResults(
+      db as unknown as Parameters<typeof persistCheckResults>[0],
+      Array.from({ length: 75 }, (_, index) => createResult(`config-${index}`)),
+      1_000
+    );
+
+    expect(db.batchCalls.length).toBeGreaterThan(1);
+    expect(db.batchCalls.every((call) => call.length <= 100)).toBe(true);
+    expect(db.batchCalls.reduce((sum, call) => sum + call.length, 0)).toBe(150);
+  });
+
+  it("can skip history writes while still updating latest rows", async () => {
+    const db = new FakeD1();
+
+    await persistCheckResults(
+      db as unknown as Parameters<typeof persistCheckResults>[0],
+      [
+        { ...createResult("config-1"), status: "maintenance" },
+        createResult("config-2"),
+      ],
+      1_000,
+      { shouldWriteHistory: (result) => result.status !== "maintenance" }
+    );
+
+    expect(db.batchCalls).toHaveLength(1);
+    expect(db.batchCalls[0].map((statement) => statement.query)).toEqual([
+      expect.stringContaining("INSERT INTO check_latest"),
+      expect.stringContaining("INSERT INTO check_history"),
+      expect.stringContaining("INSERT INTO check_latest"),
+    ]);
+  });
 });

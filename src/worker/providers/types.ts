@@ -33,5 +33,11 @@ export interface WorkerCheckResult {
   checkedAt: string;
   message: string;
   logMessage?: string;
+  officialStatus?: {
+    status: "operational" | "degraded" | "down" | "unknown";
+    message: string;
+    checkedAt: string;
+    affectedComponents?: string[];
+  };
   groupName?: string | null;
 }

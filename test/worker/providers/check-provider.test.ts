@@ -24,6 +24,16 @@ const jsonResponse = (body: unknown, init?: ResponseInit) =>
     headers: { "content-type": "application/json" },
   });
 
+type FetchCall = [string, RequestInit];
+
+function getFetchCall(fetcher: ReturnType<typeof vi.fn>): FetchCall {
+  const call = fetcher.mock.calls[0];
+  if (!call) {
+    throw new Error("expected fetcher to be called");
+  }
+  return call as FetchCall;
+}
+
 describe("checkProvider", () => {
   it("returns operational when provider response passes challenge validation", async () => {
     const fetcher = vi.fn(async () =>
@@ -97,5 +107,159 @@ describe("checkProvider", () => {
     expect(result.status).toBe("maintenance");
     expect(result.pingLatencyMs).toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("lets custom request headers override provider auth headers", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ choices: [{ message: { content: "8" } }] })
+    );
+
+    await checkProvider(
+      {
+        ...baseConfig,
+        requestHeaders: {
+          Authorization: "Bearer custom-token",
+        },
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    const [, init] = getFetchCall(fetcher);
+    const headers = init.headers as Headers;
+    expect(headers.get("authorization")).toBe("Bearer custom-token");
+  });
+
+  it("prevents metadata from overriding generated Anthropic challenge fields", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ content: [{ type: "text", text: "8" }] })
+    );
+
+    await checkProvider(
+      {
+        ...baseConfig,
+        type: "anthropic",
+        model: "claude-3-5-haiku",
+        metadata: {
+          model: "wrong-model",
+          max_tokens: 99,
+          messages: [{ role: "user", content: "wrong prompt" }],
+          temperature: 0,
+        },
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    const [, init] = getFetchCall(fetcher);
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({
+      model: "claude-3-5-haiku",
+      max_tokens: 1,
+      messages: [{ role: "user", content: challenge.prompt }],
+      temperature: 0,
+    });
+  });
+
+  it("prevents metadata from overriding generated Gemini challenge fields", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        candidates: [{ content: { parts: [{ text: "8" }] } }],
+      })
+    );
+
+    await checkProvider(
+      {
+        ...baseConfig,
+        type: "gemini",
+        endpoint:
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+        model: "gemini-pro",
+        metadata: {
+          contents: [{ role: "user", parts: [{ text: "wrong prompt" }] }],
+          generationConfig: { maxOutputTokens: 99 },
+          safetySettings: [],
+        },
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    const [, init] = getFetchCall(fetcher);
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({
+      contents: [{ role: "user", parts: [{ text: challenge.prompt }] }],
+      generationConfig: { maxOutputTokens: 1 },
+      safetySettings: [],
+    });
+  });
+
+  it("strips model reasoning directives for OpenAI request bodies", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ choices: [{ message: { content: "8" } }] })
+    );
+
+    await checkProvider(
+      {
+        ...baseConfig,
+        model: "o1@high",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    const [, init] = getFetchCall(fetcher);
+    const body = JSON.parse(String(init.body));
+    expect(body.model).toBe("o1");
+    expect(body.reasoning_effort).toBe("high");
+  });
+
+  it("uses OpenAI-compatible formatting for non-Google Gemini endpoints", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ choices: [{ message: { content: "8" } }] })
+    );
+
+    await checkProvider(
+      {
+        ...baseConfig,
+        type: "gemini",
+        endpoint: "https://gateway.example/v1/chat/completions",
+        model: "gemini-2.5-pro",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    const [url, init] = getFetchCall(fetcher);
+    const headers = init.headers as Headers;
+    const body = JSON.parse(String(init.body));
+    expect(url).toBe("https://gateway.example/v1/chat/completions");
+    expect(headers.get("authorization")).toBe("Bearer secret");
+    expect(body).toMatchObject({
+      model: "gemini-2.5-pro",
+      messages: [{ role: "user", content: challenge.prompt }],
+      max_tokens: 1,
+    });
+    expect(body.contents).toBeUndefined();
   });
 });

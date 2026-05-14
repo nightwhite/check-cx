@@ -140,6 +140,7 @@ describe("status route", () => {
     expect(db.lastQuery).toContain("(?1 IS NULL OR c.group_name = ?1)");
     expect(db.lastQuery).toContain("(?2 IS NULL OR m.model = ?2)");
     expect(db.lastQuery).toContain("JOIN check_models m ON m.id = c.model_id");
+    expect(db.lastQuery).toContain("ORDER BY c.id");
     expect(db.lastQuery).not.toContain("LEFT JOIN check_models");
     expect(db.lastBindValues).toEqual(["core", "gpt-4o-mini"]);
   });
