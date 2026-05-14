@@ -6,6 +6,7 @@ import type { WorkerCheckResult } from "../../../src/worker/providers";
 
 interface SnapshotRow {
   payload_json: string;
+  generated_at_ms: number;
 }
 
 interface GroupInfoRow {
@@ -68,9 +69,28 @@ class FakeStatement implements D1StatementLike {
   }
 
   async run() {
+    if (
+      this.query.startsWith("DELETE FROM dashboard_snapshots") &&
+      this.query.includes("snapshot_key LIKE 'group:%'")
+    ) {
+      const generatedAtMs = Number(this.values[0]);
+      let changes = 0;
+      for (const [key, row] of this.db.rows) {
+        if (
+          key.startsWith("group:") &&
+          row.generated_at_ms < generatedAtMs
+        ) {
+          this.db.rows.delete(key);
+          changes++;
+        }
+      }
+      return { meta: { changes } };
+    }
+
     const key = `${String(this.values[0])}:${String(this.values[1])}`;
     this.db.rows.set(key, {
       payload_json: String(this.values[2]),
+      generated_at_ms: Number(this.values[4]),
     });
     return { meta: { changes: 1 } };
   }
@@ -284,5 +304,29 @@ describe("writeDashboardSnapshot", () => {
     expect(db.historyQueryCount).toBeGreaterThan(1);
     expect(db.maxBindCount).toBeLessThanOrEqual(100);
     expect(db.lastHistoryQuery).toContain("ROW_NUMBER()");
+  });
+
+  it("removes stale group snapshots after writing current group snapshots", async () => {
+    const db = new FakeD1();
+    db.rows.set("group:stale:7d", {
+      payload_json: "{\"groupName\":\"stale\"}",
+      generated_at_ms: 100,
+    });
+    db.rows.set("dashboard:7d", {
+      payload_json: "{\"total\":0}",
+      generated_at_ms: 100,
+    });
+
+    await expect(
+      writeDashboardSnapshot(
+        db,
+        [createResult("core-1", "core")],
+        Date.parse("2026-05-03T00:00:00.000Z")
+      )
+    ).resolves.toEqual({ writtenSnapshots: 6 });
+
+    expect(db.rows.has("group:core:7d")).toBe(true);
+    expect(db.rows.has("group:stale:7d")).toBe(false);
+    expect(db.rows.has("dashboard:7d")).toBe(true);
   });
 });

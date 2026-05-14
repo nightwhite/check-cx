@@ -82,6 +82,10 @@ class FakeStatement implements JobLockStatementLike {
       return { meta: { changes: 1 } };
     }
 
+    if (this.query.includes("DELETE FROM dashboard_snapshots")) {
+      return { meta: { changes: 0 } };
+    }
+
     if (this.query.includes("INSERT INTO job_runs")) {
       if (this.db.failRecordRun) {
         throw new Error("recordRun failed");

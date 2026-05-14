@@ -104,5 +104,18 @@ export function createDashboardSnapshotRepository(db: D1Executor) {
 
       return result.meta?.changes ?? 0;
     },
+
+    async pruneStaleGroupSnapshots(generatedAtMs: number) {
+      const result = await db
+        .prepare(
+          `DELETE FROM dashboard_snapshots
+           WHERE snapshot_key LIKE 'group:%'
+             AND generated_at_ms < ?`
+        )
+        .bind(generatedAtMs)
+        .run();
+
+      return result.meta?.changes ?? 0;
+    },
   };
 }

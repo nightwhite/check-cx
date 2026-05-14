@@ -468,6 +468,7 @@ export async function writeDashboardSnapshot(
   }
 
   await repository.upsertMany(records);
+  await repository.pruneStaleGroupSnapshots(nowMs);
 
   return { writtenSnapshots: records.length };
 }

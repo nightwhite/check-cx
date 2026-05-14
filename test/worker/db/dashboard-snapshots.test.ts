@@ -47,7 +47,28 @@ class FakeStatement implements D1StatementLike {
       return { meta: { changes: 1 } };
     }
 
-    if (this.query.startsWith("DELETE FROM dashboard_snapshots")) {
+    if (
+      this.query.startsWith("DELETE FROM dashboard_snapshots") &&
+      this.query.includes("snapshot_key LIKE 'group:%'")
+    ) {
+      const generatedAtMs = Number(this.values[0]);
+      let changes = 0;
+      for (const [key, row] of this.db.rows) {
+        if (
+          row.snapshot_key.startsWith("group:") &&
+          row.generated_at_ms < generatedAtMs
+        ) {
+          this.db.rows.delete(key);
+          changes++;
+        }
+      }
+      return { meta: { changes } };
+    }
+
+    if (
+      this.query.startsWith("DELETE FROM dashboard_snapshots") &&
+      this.query.includes("generated_at_ms < ?")
+    ) {
       const cutoff = Number(this.values[0]);
       let changes = 0;
       for (const [key, row] of this.db.rows) {
@@ -92,5 +113,43 @@ describe("dashboard snapshot repository", () => {
     });
     await expect(repository.pruneBefore(101)).resolves.toBe(1);
     await expect(repository.find("dashboard", "7d")).resolves.toBeNull();
+  });
+
+  it("deletes stale group snapshots without pruning current dashboard snapshots", async () => {
+    const db = new FakeD1();
+    const repository = createDashboardSnapshotRepository(db);
+
+    await repository.upsertMany([
+      {
+        snapshotKey: "dashboard",
+        period: "7d",
+        payloadJson: "{\"total\":1}",
+        etag: "\"dashboard\"",
+        generatedAtMs: 100,
+      },
+      {
+        snapshotKey: "group:core",
+        period: "7d",
+        payloadJson: "{\"total\":1}",
+        etag: "\"core\"",
+        generatedAtMs: 200,
+      },
+      {
+        snapshotKey: "group:stale",
+        period: "7d",
+        payloadJson: "{\"total\":1}",
+        etag: "\"stale\"",
+        generatedAtMs: 100,
+      },
+    ]);
+
+    await expect(repository.pruneStaleGroupSnapshots(200)).resolves.toBe(1);
+    await expect(repository.find("dashboard", "7d")).resolves.toEqual(
+      expect.objectContaining({ snapshotKey: "dashboard" })
+    );
+    await expect(repository.find("group:core", "7d")).resolves.toEqual(
+      expect.objectContaining({ snapshotKey: "group:core" })
+    );
+    await expect(repository.find("group:stale", "7d")).resolves.toBeNull();
   });
 });
