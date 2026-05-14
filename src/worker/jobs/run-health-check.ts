@@ -7,6 +7,7 @@ import { pruneCheckHistory } from "./prune-check-history";
 import { runProviderChecks } from "./run-checks";
 import { updateAvailabilityRollups } from "./update-rollups";
 import { writeDashboardSnapshot } from "./write-dashboard-snapshot";
+import { writeOfficialStatusSnapshots } from "./write-official-status-snapshots";
 
 const JOB_NAME = "health-check";
 const LOCK_TTL_MS = 10 * 60_000;
@@ -100,6 +101,7 @@ export async function runHealthCheckJob(
       shouldWriteHistory: isHistoryResult,
     });
     await updateAvailabilityRollups(env.DB, historyResults, finishedAtMs);
+    await writeOfficialStatusSnapshots(env.DB);
     await writeDashboardSnapshot(env.DB, results, finishedAtMs);
     if (shouldPruneCheckHistory(scheduledTime)) {
       await pruneCheckHistory(env.DB, finishedAtMs);
