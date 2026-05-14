@@ -4,7 +4,7 @@ export interface EncryptedProviderKey {
   version: number;
 }
 
-function fromBase64(value: string): Uint8Array<ArrayBuffer> {
+function fromBase64(value: string) {
   return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 

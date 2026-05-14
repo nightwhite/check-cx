@@ -18,7 +18,7 @@ function fromBase64ArrayBuffer(value: string): ArrayBuffer {
   ) as ArrayBuffer;
 }
 
-function fromBase64Bytes(value: string): Uint8Array<ArrayBuffer> {
+function fromBase64Bytes(value: string) {
   return new Uint8Array(fromBase64ArrayBuffer(value));
 }
 
