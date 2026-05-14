@@ -66,6 +66,22 @@ describe("internal db health route", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       workerRuntime: "cloudflare-workers",
+      availabilityCache: {
+        hits: 0,
+        misses: 0,
+      },
+      configCache: {
+        hits: 0,
+        misses: 0,
+      },
+      groupInfoCache: {
+        hits: 0,
+        misses: 0,
+      },
+      dashboardCache: {
+        hits: 0,
+        misses: 0,
+      },
       dashboardSnapshots: {
         count: 7,
       },
@@ -73,6 +89,23 @@ describe("internal db health route", () => {
         hits: 0,
         misses: 0,
       },
+    });
+  });
+
+  it("accepts authenticated cache metrics reset requests as a no-op", async () => {
+    const app = createWorkerApp();
+
+    const response = await app.request(
+      "http://example.com/api/internal/cache-metrics",
+      { method: "POST", headers: { "x-internal-token": "secret" } },
+      createEnv("secret")
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      reset: false,
+      workerRuntime: "cloudflare-workers",
     });
   });
 });

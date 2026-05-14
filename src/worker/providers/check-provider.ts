@@ -176,7 +176,9 @@ function buildRequestUrl(config: WorkerProviderConfig): string {
     return config.endpoint;
   }
 
-  const url = new URL(config.endpoint);
+  const url = new URL(
+    config.endpoint.replace(":streamGenerateContent", ":generateContent")
+  );
   if (!url.searchParams.has("key")) {
     url.searchParams.set("key", config.apiKey);
   }

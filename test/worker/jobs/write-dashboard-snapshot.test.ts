@@ -18,6 +18,7 @@ interface GroupInfoRow {
 interface AvailabilityRow {
   config_id: string;
   period: string;
+  day_start_ms: number;
   total_checks: number;
   operational_count: number;
 }
@@ -58,7 +59,44 @@ class FakeStatement implements D1StatementLike {
     }
 
     if (this.query.includes("FROM availability_rollups")) {
-      return { results: this.db.availabilityRows as T[] };
+      const ids = new Set(
+        this.values.filter((value): value is string => typeof value === "string")
+      );
+      const numericValues = this.values.filter(
+        (value): value is number => typeof value === "number"
+      );
+      const [upperBoundMs, cutoff7dMs, cutoff15dMs, cutoff30dMs] =
+        numericValues.slice(-4);
+      const cutoffByPeriod: Record<string, number> = {
+        "7d": cutoff7dMs,
+        "15d": cutoff15dMs,
+        "30d": cutoff30dMs,
+      };
+      const groupedRows = new Map<string, AvailabilityRow>();
+
+      for (const row of this.db.availabilityRows) {
+        if (!ids.has(row.config_id)) {
+          continue;
+        }
+        if (row.day_start_ms > upperBoundMs) {
+          continue;
+        }
+        if (row.day_start_ms < cutoffByPeriod[row.period]) {
+          continue;
+        }
+
+        const key = `${row.config_id}:${row.period}`;
+        const existing = groupedRows.get(key) ?? {
+          ...row,
+          total_checks: 0,
+          operational_count: 0,
+        };
+        existing.total_checks += row.total_checks;
+        existing.operational_count += row.operational_count;
+        groupedRows.set(key, existing);
+      }
+
+      return { results: [...groupedRows.values()] as T[] };
     }
 
     if (this.query.includes("FROM official_status_snapshots")) {
@@ -157,14 +195,37 @@ class FakeD1 implements D1Executor {
     {
       config_id: "core-1",
       period: "7d",
-      total_checks: 10,
-      operational_count: 9,
+      day_start_ms: Date.parse("2026-05-01T00:00:00.000Z"),
+      total_checks: 3,
+      operational_count: 2,
+    },
+    {
+      config_id: "core-1",
+      period: "7d",
+      day_start_ms: Date.parse("2026-05-02T00:00:00.000Z"),
+      total_checks: 7,
+      operational_count: 7,
+    },
+    {
+      config_id: "core-1",
+      period: "7d",
+      day_start_ms: Date.parse("2026-04-20T00:00:00.000Z"),
+      total_checks: 100,
+      operational_count: 0,
     },
     {
       config_id: "core-1",
       period: "30d",
+      day_start_ms: Date.parse("2026-04-20T00:00:00.000Z"),
       total_checks: 30,
       operational_count: 27,
+    },
+    {
+      config_id: "solo-1",
+      period: "7d",
+      day_start_ms: Date.parse("2026-05-02T00:00:00.000Z"),
+      total_checks: 5,
+      operational_count: 5,
     },
   ];
   readonly officialStatusRows: OfficialStatusRow[] = [
@@ -216,12 +277,13 @@ describe("writeDashboardSnapshot", () => {
         [createResult("core-1", "core"), createResult("solo-1", null)],
         Date.parse("2026-05-03T00:00:00.000Z")
       )
-    ).resolves.toEqual({ writtenSnapshots: 6 });
+    ).resolves.toEqual({ writtenSnapshots: 9 });
 
     expect(db.historyQueryCount).toBe(1);
     expect(db.batchCalls).toBe(1);
     expect(db.rows.has("dashboard:7d")).toBe(true);
     expect(db.rows.has("group:core:7d")).toBe(true);
+    expect(db.rows.has("group:__ungrouped__:7d")).toBe(true);
     const groupPayload = JSON.parse(
       db.rows.get("group:core:7d")?.payload_json ?? "{}"
     );
@@ -270,9 +332,10 @@ describe("writeDashboardSnapshot", () => {
       checkedAt: "2026-05-02T00:00:00.000Z",
     });
     expect(coreTimeline.items.map((item: { status: string }) => item.status)).toEqual([
-      "failed",
       "operational",
+      "failed",
     ]);
+    expect(coreTimeline.items[0].checkedAt).toBe("2026-05-02T00:00:00.000Z");
 
     const dashboard30dPayload = JSON.parse(
       db.rows.get("dashboard:30d")?.payload_json ?? "{}"
@@ -281,10 +344,39 @@ describe("writeDashboardSnapshot", () => {
       (timeline: { id: string }) => timeline.id === "core-1"
     );
     expect(core30dTimeline.items.map((item: { status: string }) => item.status)).toEqual([
-      "degraded",
-      "failed",
       "operational",
+      "failed",
+      "degraded",
     ]);
+    expect(groupPayload.availabilityStats).toEqual({
+      "core-1": [
+        {
+          period: "7d",
+          totalChecks: 10,
+          operationalCount: 9,
+          availabilityPct: 90,
+        },
+        {
+          period: "30d",
+          totalChecks: 30,
+          operationalCount: 27,
+          availabilityPct: 90,
+        },
+      ],
+    });
+    const ungroupedPayload = JSON.parse(
+      db.rows.get("group:__ungrouped__:7d")?.payload_json ?? "{}"
+    );
+    expect(ungroupedPayload).toMatchObject({
+      groupName: "__ungrouped__",
+      displayName: "未分组",
+      total: 1,
+      providerTimelines: [
+        expect.objectContaining({
+          id: "solo-1",
+        }),
+      ],
+    });
   });
 
   it("chunks history queries to stay under the D1 bind parameter limit", async () => {
@@ -299,7 +391,7 @@ describe("writeDashboardSnapshot", () => {
         results,
         Date.parse("2026-05-03T00:00:00.000Z")
       )
-    ).resolves.toEqual({ writtenSnapshots: 3 });
+    ).resolves.toEqual({ writtenSnapshots: 6 });
 
     expect(db.historyQueryCount).toBeGreaterThan(1);
     expect(db.maxBindCount).toBeLessThanOrEqual(100);

@@ -74,6 +74,7 @@ export const checkHistory = sqliteTable(
       table.configId,
       table.checkedAtMs
     ),
+    index("idx_check_history_checked_at").on(table.checkedAtMs),
   ]
 );
 
@@ -160,13 +161,17 @@ export const jobLocks = sqliteTable(
   (table) => [index("idx_job_locks_locked_until").on(table.lockedUntilMs)]
 );
 
-export const jobRuns = sqliteTable("job_runs", {
-  id: text("id").primaryKey(),
-  jobName: text("job_name").notNull(),
-  ownerId: text("owner_id").notNull(),
-  status: text("status").notNull(),
-  startedAtMs: integer("started_at_ms").notNull(),
-  finishedAtMs: integer("finished_at_ms"),
-  checkedCount: integer("checked_count").notNull().default(0),
-  errorMessage: text("error_message"),
-});
+export const jobRuns = sqliteTable(
+  "job_runs",
+  {
+    id: text("id").primaryKey(),
+    jobName: text("job_name").notNull(),
+    ownerId: text("owner_id").notNull(),
+    status: text("status").notNull(),
+    startedAtMs: integer("started_at_ms").notNull(),
+    finishedAtMs: integer("finished_at_ms"),
+    checkedCount: integer("checked_count").notNull().default(0),
+    errorMessage: text("error_message"),
+  },
+  (table) => [index("idx_job_runs_started_at").on(table.startedAtMs)]
+);

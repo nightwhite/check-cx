@@ -55,11 +55,18 @@ Provider key 解密密钥必须只放在 Workers Secret：
 corepack pnpm exec wrangler secret put CONFIG_ENCRYPTION_KEY
 ```
 
+内部诊断接口也需要独立 token：
+
+```bash
+corepack pnpm exec wrangler secret put INTERNAL_METRICS_TOKEN
+```
+
 要求：
 
 - 长度为 16、24 或 32 字节。
 - 与迁移脚本加密 provider key 使用的值一致。
 - 不写入 `wrangler.jsonc`、源码、README 或提交记录。
+- `INTERNAL_METRICS_TOKEN` 只用于 `/api/internal/db-health` 和 `/api/internal/cache-metrics`，必须同步到监控调用方的 `x-internal-token` 请求头。
 
 ## 3. 应用 Migrations
 
@@ -92,6 +99,8 @@ SUPABASE_URL="https://..." \
 SUPABASE_SERVICE_ROLE_KEY="..." \
 corepack pnpm dlx tsx scripts/migration/export-supabase.ts ./tmp/supabase-export
 ```
+
+注意：`./tmp/supabase-export/check_configs.jsonl` 会临时包含 Supabase 中的明文 provider key。该目录只能放在本机临时路径，导入完成后必须删除，不能上传、共享或提交。
 
 生成 D1 导入 SQL 或参数化语句：
 

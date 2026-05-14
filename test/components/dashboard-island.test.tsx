@@ -22,22 +22,70 @@ const baseData: DashboardData = {
         type: "openai",
         endpoint: "https://api.openai.com/v1/chat/completions",
         model: "gpt-4o-mini",
-        status: "operational",
+        status: "failed",
         latencyMs: 120,
         pingLatencyMs: 12,
         checkedAt: "2026-05-03T00:00:00.000Z",
-        message: "OK",
+        message: "Provider returned HTTP 500",
+        officialStatus: {
+          status: "degraded",
+          message: "OpenAI incident",
+          checkedAt: "2026-05-03T00:00:00.000Z",
+          affectedComponents: ["API"],
+        },
         groupName: "core",
       },
-      items: [],
+      items: [
+        {
+          id: "core-1",
+          name: "OpenAI",
+          type: "openai",
+          endpoint: "https://api.openai.com/v1/chat/completions",
+          model: "gpt-4o-mini",
+          status: "operational",
+          latencyMs: 120,
+          pingLatencyMs: 12,
+          checkedAt: "2026-05-03T00:00:00.000Z",
+          message: "OK",
+          groupName: "core",
+        },
+        {
+          id: "core-1",
+          name: "OpenAI",
+          type: "openai",
+          endpoint: "https://api.openai.com/v1/chat/completions",
+          model: "gpt-4o-mini",
+          status: "failed",
+          latencyMs: null,
+          pingLatencyMs: 12,
+          checkedAt: "2026-05-02T00:00:00.000Z",
+          message: "Provider returned HTTP 500",
+          groupName: "core",
+        },
+      ],
     },
   ],
-  groupInfos: [],
+  groupInfos: [
+    {
+      groupName: "core",
+      websiteUrl: "https://core.example",
+      tags: "prod,core",
+    },
+  ],
   lastUpdated: "2026-05-03T00:00:00.000Z",
   total: 1,
   pollIntervalLabel: "60 秒",
   pollIntervalMs: 1_000,
-  availabilityStats: {},
+  availabilityStats: {
+    "core-1": [
+      {
+        period: "7d",
+        totalChecks: 10,
+        operationalCount: 9,
+        availabilityPct: 90,
+      },
+    ],
+  },
   trendPeriod: "7d",
   generatedAt: 1_775_174_400_000,
 };
@@ -167,5 +215,62 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
     expect(screen.getByDisplayValue("core")).not.toBeNull();
+  });
+
+  it("filters ungrouped deep links using the legacy sentinel group", async () => {
+    window.history.replaceState({}, "", "/group/__ungrouped__");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          ...baseData,
+          providerTimelines: [
+            ...baseData.providerTimelines,
+            {
+              id: "solo-1",
+              latest: {
+                ...baseData.providerTimelines[0].latest,
+                id: "solo-1",
+                name: "Ungrouped",
+                groupName: null,
+              },
+              items: [],
+            },
+          ],
+        })
+      )
+    );
+
+    render(<DashboardIsland />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Ungrouped")).not.toBeNull();
+    expect(screen.queryByText("OpenAI")).toBeNull();
+  });
+
+
+  it("renders accessible filters, group metadata, availability, timeline, message, and official status", async () => {
+    window.history.replaceState({}, "", "/group/core");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(baseData))
+    );
+
+    render(<DashboardIsland />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByLabelText("搜索 Provider、模型、端点或分组")).not.toBeNull();
+    expect(screen.getByLabelText("分组筛选")).not.toBeNull();
+    expect(screen.getByText("https://core.example")).not.toBeNull();
+    expect(screen.getByText("prod")).not.toBeNull();
+    expect(screen.getByText("7 天可用率 90%")).not.toBeNull();
+    expect(screen.getByText("趋势 2 点")).not.toBeNull();
+    expect(screen.getByText("Provider returned HTTP 500")).not.toBeNull();
+    expect(screen.getByText("官方状态：OpenAI incident")).not.toBeNull();
   });
 });

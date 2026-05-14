@@ -27,6 +27,7 @@ wrangler secret put CONFIG_ENCRYPTION_KEY
 - 默认只导出最近 30 天 `check_history`。
 - D1 中不写入明文 `api_key`。
 - 真实导入前必须先应用 D1 migration。
+- 导出目录会临时保存 Supabase 原始数据，其中 `check_configs.jsonl` 包含明文 provider key。导入完成后必须删除该目录，不能提交、上传或共享。
 
 ## 执行顺序
 
@@ -41,4 +42,10 @@ corepack pnpm dlx tsx scripts/migration/import-d1.ts ./tmp/supabase-export > ./t
 corepack pnpm exec wrangler d1 execute DB --remote --file ./tmp/d1-import.sql
 ```
 
-`import-d1.ts` 会导入模板、模型、配置、最近 30 天历史、分组、系统通知，并从历史记录派生 `check_latest`。
+导入完成后删除临时导出目录和导入 SQL：
+
+```bash
+rm -rf ./tmp/supabase-export ./tmp/d1-import.sql
+```
+
+`import-d1.ts` 会导入模板、模型、配置、最近 30 天历史、分组、系统通知，并从历史记录派生 `check_latest` 和 `availability_rollups`。

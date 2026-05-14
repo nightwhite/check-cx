@@ -16,6 +16,7 @@ export interface RunHealthCheckOptions {
   ownerId?: string;
   loadConfigs?: (env: Env) => Promise<WorkerProviderConfig[]>;
   runCheck?: (config: WorkerProviderConfig) => Promise<WorkerCheckResult>;
+  writeOfficialStatuses?: (env: Env) => Promise<unknown>;
   now?: () => number;
 }
 
@@ -95,17 +96,22 @@ export async function runHealthCheckJob(
     const runCheck = options.runCheck ?? checkProvider;
     const results = await runProviderChecks(configs, runCheck);
     const historyResults = results.filter(isHistoryResult);
-    const finishedAtMs = now();
+    const snapshotAtMs = now();
 
-    await persistCheckResults(env.DB, results, finishedAtMs, {
+    await persistCheckResults(env.DB, results, snapshotAtMs, {
       shouldWriteHistory: isHistoryResult,
     });
-    await updateAvailabilityRollups(env.DB, historyResults, finishedAtMs);
-    await writeOfficialStatusSnapshots(env.DB);
-    await writeDashboardSnapshot(env.DB, results, finishedAtMs);
-    if (shouldPruneCheckHistory(scheduledTime)) {
-      await pruneCheckHistory(env.DB, finishedAtMs);
+    await updateAvailabilityRollups(env.DB, historyResults, snapshotAtMs);
+    if (options.writeOfficialStatuses) {
+      await options.writeOfficialStatuses(env);
+    } else {
+      await writeOfficialStatusSnapshots(env.DB);
     }
+    await writeDashboardSnapshot(env.DB, results, snapshotAtMs);
+    if (shouldPruneCheckHistory(scheduledTime)) {
+      await pruneCheckHistory(env.DB, snapshotAtMs);
+    }
+    const finishedAtMs = now();
 
     try {
       await repository.recordRun({

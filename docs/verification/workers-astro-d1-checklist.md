@@ -55,10 +55,10 @@ corepack pnpm dlx tsx scripts/verification/api-contract-check.ts
 - [x] 无生产 Worker 业务 `setInterval`：
 
 ```bash
-rg -n "setInterval|setTimeout\\(" src/worker src/pages src/components
+rg -n "setInterval|setTimeout\\(" src/worker
 ```
 
-说明：`check-provider.ts` 中的 `setTimeout` 仅用于请求超时控制，不是业务调度。
+说明：`check-provider.ts` 中的 `setTimeout` 仅用于请求超时控制，不是业务调度。前端 `DashboardIsland` 会使用 `window.setInterval` 做客户端自动刷新，这不属于 Worker 业务调度。
 
 - [x] 无 request-triggered health check：
 
@@ -106,15 +106,15 @@ corepack pnpm exec wrangler d1 migrations apply DB --local
 corepack pnpm exec wrangler deploy --dry-run
 ```
 
-本地验证记录（2026-05-02）：
+本地验证记录（2026-05-15）：
 
-- `corepack pnpm test`：13 个测试文件、26 个测试通过。
+- `corepack pnpm test`：23 个测试文件、69 个测试通过。
 - `corepack pnpm typecheck`：通过。
 - `corepack pnpm lint`：通过。
 - `corepack pnpm build`：Astro static build 通过。
 - `corepack pnpm exec wrangler types --check`：`worker-configuration.d.ts` 已是最新。
 - `corepack pnpm exec wrangler d1 migrations apply DB --local`：无待应用 migration。
-- `corepack pnpm exec wrangler deploy --dry-run`：通过，Worker bundle 93.22 KiB，gzip 22.63 KiB。
+- `corepack pnpm exec wrangler deploy --dry-run`：通过。
 
 ## 当前已知阻塞
 

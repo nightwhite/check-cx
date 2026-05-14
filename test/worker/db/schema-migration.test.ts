@@ -19,9 +19,11 @@ const requiredTables = [
 
 const requiredIndexes = [
   "idx_check_history_config_checked_at",
+  "idx_check_history_checked_at",
   "idx_check_configs_group_name",
   "idx_dashboard_snapshots_key_period",
   "idx_job_locks_locked_until",
+  "idx_job_runs_started_at",
 ];
 
 describe("D1 initial migration", () => {

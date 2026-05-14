@@ -11,6 +11,7 @@ const PERIODS: Array<{ value: AvailabilityPeriod; label: string }> = [
   { value: "15d", label: "15 天" },
   { value: "30d", label: "30 天" },
 ];
+const UNGROUPED_KEY = "__ungrouped__";
 
 const STATUS_LABEL: Record<string, string> = {
   operational: "正常",
@@ -39,9 +40,29 @@ function getGroups(data: DashboardData | null) {
   for (const timeline of data?.providerTimelines ?? []) {
     if (timeline.latest.groupName) {
       groups.add(timeline.latest.groupName);
+    } else {
+      groups.add(UNGROUPED_KEY);
     }
   }
   return [...groups].sort((left, right) => left.localeCompare(right));
+}
+
+function getGroupInfo(data: DashboardData | null, groupName: string) {
+  return data?.groupInfos.find((info) => info.groupName === groupName) ?? null;
+}
+
+function getAvailabilityLabel(
+  data: DashboardData | null,
+  timeline: ProviderTimeline,
+  period: AvailabilityPeriod
+) {
+  const stat = data?.availabilityStats?.[timeline.id]?.find(
+    (item) => item.period === period
+  );
+  if (!stat || stat.availabilityPct === null) {
+    return null;
+  }
+  return `${PERIODS.find((item) => item.value === period)?.label ?? period}可用率 ${stat.availabilityPct}%`;
 }
 
 function matchesSearch(timeline: ProviderTimeline, query: string) {
@@ -150,10 +171,22 @@ export function DashboardIsland() {
   const groups = useMemo(() => getGroups(data), [data]);
   const timelines = useMemo(() => {
     return (data?.providerTimelines ?? [])
-      .filter((timeline) => group === "all" || timeline.latest.groupName === group)
+      .filter((timeline) => {
+        if (group === "all") {
+          return true;
+        }
+        if (group === UNGROUPED_KEY) {
+          return !timeline.latest.groupName;
+        }
+        return timeline.latest.groupName === group;
+      })
       .filter((timeline) => matchesSearch(timeline, query))
       .sort((left, right) => left.latest.name.localeCompare(right.latest.name));
   }, [data, group, query]);
+  const selectedGroupInfo = useMemo(
+    () => (group === "all" ? null : getGroupInfo(data, group)),
+    [data, group]
+  );
   const summary = useMemo(() => {
     const counts = new Map<string, number>();
     for (const timeline of data?.providerTimelines ?? []) {
@@ -188,6 +221,7 @@ export function DashboardIsland() {
 
       <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
         <label className="relative block">
+          <span className="sr-only">搜索 Provider、模型、端点或分组</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             id="provider-search"
@@ -201,6 +235,7 @@ export function DashboardIsland() {
         <select
           id="group-filter"
           name="group-filter"
+          aria-label="分组筛选"
           value={group}
           onChange={(event) => setGroup(event.target.value)}
           className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none"
@@ -208,7 +243,7 @@ export function DashboardIsland() {
           <option value="all">全部分组</option>
           {groups.map((item) => (
             <option key={item} value={item}>
-              {item}
+              {item === UNGROUPED_KEY ? "未分组" : item}
             </option>
           ))}
         </select>
@@ -230,6 +265,33 @@ export function DashboardIsland() {
           ))}
         </div>
       </div>
+
+      {selectedGroupInfo && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/80 p-3 text-sm">
+          {selectedGroupInfo.websiteUrl && (
+            <a
+              className="font-medium text-foreground underline underline-offset-4"
+              href={selectedGroupInfo.websiteUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {selectedGroupInfo.websiteUrl}
+            </a>
+          )}
+          {selectedGroupInfo.tags
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+            .map((tag) => (
+              <span
+                key={tag}
+                className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {["operational", "degraded", "failed", "maintenance"].map((status) => (
@@ -270,6 +332,7 @@ export function DashboardIsland() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {timelines.map((timeline) => {
             const latest = timeline.latest;
+            const availabilityLabel = getAvailabilityLabel(data, timeline, period);
             return (
               <article
                 key={timeline.id}
@@ -294,6 +357,12 @@ export function DashboardIsland() {
                   </span>
                 </div>
 
+                {latest.officialStatus && (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                    官方状态：{latest.officialStatus.message}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <div className="text-xs text-muted-foreground">首字延迟</div>
@@ -308,6 +377,17 @@ export function DashboardIsland() {
                     </div>
                   </div>
                 </div>
+
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  {availabilityLabel && <span>{availabilityLabel}</span>}
+                  <span>趋势 {timeline.items.length} 点</span>
+                </div>
+
+                {latest.message && latest.message !== "OK" && (
+                  <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                    {latest.message}
+                  </div>
+                )}
 
                 <div className="mt-auto flex items-center justify-between gap-3 text-xs text-muted-foreground">
                   <span className="truncate">{latest.groupName ?? "未分组"}</span>

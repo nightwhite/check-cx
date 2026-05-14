@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS job_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_check_history_config_checked_at ON check_history(config_id, checked_at_ms);
+CREATE INDEX IF NOT EXISTS idx_check_history_checked_at ON check_history(checked_at_ms);
 CREATE INDEX IF NOT EXISTS idx_check_configs_group_name ON check_configs(group_name);
 CREATE INDEX IF NOT EXISTS idx_dashboard_snapshots_key_period ON dashboard_snapshots(snapshot_key, period);
 CREATE INDEX IF NOT EXISTS idx_job_locks_locked_until ON job_locks(locked_until_ms);
+CREATE INDEX IF NOT EXISTS idx_job_runs_started_at ON job_runs(started_at_ms);

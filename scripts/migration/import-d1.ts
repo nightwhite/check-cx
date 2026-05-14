@@ -191,6 +191,87 @@ export async function buildLatestStatementsFromHistory(
   });
 }
 
+const ROLLUP_PERIODS = ["7d", "15d", "30d"] as const;
+const ROLLUP_PERIOD_ORDER = new Map(
+  ROLLUP_PERIODS.map((period, index) => [period, index])
+);
+
+interface RollupAccumulator {
+  totalChecks: number;
+  operationalCount: number;
+}
+
+function getDayStartMs(value: number): number {
+  const date = new Date(value);
+  date.setUTCHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function isOperationalForRollup(status: string): boolean {
+  return status === "operational" || status === "degraded";
+}
+
+export async function buildAvailabilityRollupStatementsFromHistory(
+  inputDir: string
+): Promise<D1ImportStatement[]> {
+  const rows = await readJsonl(inputDir, "check_history");
+  const rollups = new Map<string, RollupAccumulator>();
+
+  for (const row of rows) {
+    const configId = requireString(row.config_id, "config_id");
+    const checkedAtMs = toEpochMs(requireString(row.checked_at, "checked_at")) ?? 0;
+    const dayStartMs = getDayStartMs(checkedAtMs);
+    const status = requireString(row.status, "status");
+    const operationalDelta = isOperationalForRollup(status) ? 1 : 0;
+
+    for (const period of ROLLUP_PERIODS) {
+      const key = `${configId}\u0000${period}\u0000${dayStartMs}`;
+      const existing = rollups.get(key) ?? {
+        totalChecks: 0,
+        operationalCount: 0,
+      };
+      existing.totalChecks += 1;
+      existing.operationalCount += operationalDelta;
+      rollups.set(key, existing);
+    }
+  }
+
+  return [...rollups.entries()]
+    .sort(([left], [right]) => {
+      const [leftConfig, leftPeriod, leftDay] = left.split("\u0000");
+      const [rightConfig, rightPeriod, rightDay] = right.split("\u0000");
+      return (
+        leftConfig.localeCompare(rightConfig) ||
+        Number(leftDay) - Number(rightDay) ||
+        (ROLLUP_PERIOD_ORDER.get(leftPeriod as (typeof ROLLUP_PERIODS)[number]) ??
+          0) -
+          (ROLLUP_PERIOD_ORDER.get(
+            rightPeriod as (typeof ROLLUP_PERIODS)[number]
+          ) ?? 0)
+      );
+    })
+    .map(([key, value]) => {
+      const [configId, period, dayStartMs] = key.split("\u0000");
+      return {
+        sql: `INSERT INTO availability_rollups (
+          config_id, period, day_start_ms, total_checks, operational_count, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(config_id, period, day_start_ms) DO UPDATE SET
+          total_checks = excluded.total_checks,
+          operational_count = excluded.operational_count,
+          updated_at_ms = excluded.updated_at_ms`,
+        params: [
+          configId,
+          period,
+          Number(dayStartMs),
+          value.totalChecks,
+          value.operationalCount,
+          Number(dayStartMs),
+        ],
+      };
+    });
+}
+
 export async function buildGroupInfoStatements(
   inputDir: string
 ): Promise<D1ImportStatement[]> {
@@ -238,6 +319,7 @@ export async function buildAllD1ImportStatements(
     ...(await buildCheckConfigStatements(inputDir, encryptionKey)),
     ...(await buildHistoryStatements(inputDir)),
     ...(await buildLatestStatementsFromHistory(inputDir)),
+    ...(await buildAvailabilityRollupStatementsFromHistory(inputDir)),
     ...(await buildGroupInfoStatements(inputDir)),
     ...(await buildNotificationStatements(inputDir)),
   ];

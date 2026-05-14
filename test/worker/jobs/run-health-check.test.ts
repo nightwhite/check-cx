@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   runHealthCheckJob,
@@ -91,6 +91,7 @@ class FakeStatement implements JobLockStatementLike {
         throw new Error("recordRun failed");
       }
       this.db.jobRuns++;
+      this.db.lastJobRunFinishedAtMs = Number(this.values[5]);
       return { meta: { changes: 1 } };
     }
 
@@ -101,6 +102,7 @@ class FakeStatement implements JobLockStatementLike {
 class FakeD1 implements JobLockExecutor {
   readonly locks = new Map<string, LockRow>();
   jobRuns = 0;
+  lastJobRunFinishedAtMs: number | null = null;
   failRecordRun = false;
   readonly batchSizes: number[] = [];
   readonly batchQueries: string[] = [];
@@ -145,6 +147,7 @@ describe("runHealthCheckJob", () => {
       runHealthCheckJob(env, Date.parse("2026-05-03T01:01:00.000Z"), {
         ownerId: "owner-1",
         loadConfigs: async () => [],
+        writeOfficialStatuses: async () => undefined,
         now: () => nowValues.shift() ?? 2_000,
       })
     ).resolves.toMatchObject({
@@ -170,6 +173,7 @@ describe("runHealthCheckJob", () => {
       runHealthCheckJob(env, Date.parse("2026-05-03T01:01:00.000Z"), {
         ownerId: "owner-1",
         loadConfigs: async () => [],
+        writeOfficialStatuses: async () => undefined,
         now: () => nowValues.shift() ?? 3_000,
       })
     ).resolves.toMatchObject({
@@ -213,11 +217,36 @@ describe("runHealthCheckJob", () => {
         checkedAt: "2026-05-03T01:01:00.000Z",
         message: "维护模式",
       }),
+      writeOfficialStatuses: async () => undefined,
       now: () => 1_000,
     });
 
     expect(db.batchQueries.filter((query) => query.includes("check_latest"))).toHaveLength(1);
     expect(db.batchQueries.filter((query) => query.includes("check_history"))).toHaveLength(0);
     expect(db.batchQueries.filter((query) => query.includes("availability_rollups"))).toHaveLength(0);
+  });
+
+  it("uses injected official status writer and records finish time after job work", async () => {
+    const db = new FakeD1();
+    const officialWriter = vi.fn(async () => undefined);
+    const nowValues = [1_000, 2_000, 3_000];
+    const env = {
+      DB: db,
+      ASSETS: { fetch: async () => new Response("asset") },
+      CONFIG_ENCRYPTION_KEY: "1234567890123456",
+    } as unknown as Env;
+
+    await expect(
+      runHealthCheckJob(env, Date.parse("2026-05-03T01:01:00.000Z"), {
+        ownerId: "owner-1",
+        loadConfigs: async () => [],
+        writeOfficialStatuses: officialWriter,
+        now: () => nowValues.shift() ?? 3_000,
+      })
+    ).resolves.toMatchObject({ status: "success" });
+
+    expect(officialWriter).toHaveBeenCalledOnce();
+    expect(db.lastJobRunFinishedAtMs).toBe(3_000);
+    expect(db.locks.get("health-check")?.locked_until_ms).toBe(3_000);
   });
 });

@@ -16,6 +16,8 @@ const PERIOD_DAYS: Record<(typeof PERIODS)[number], number> = {
   "15d": 15,
   "30d": 30,
 };
+const UNGROUPED_KEY = "__ungrouped__";
+const UNGROUPED_DISPLAY_NAME = "未分组";
 const HISTORY_ID_CHUNK_SIZE = 90;
 const HISTORY_LIMIT_PER_CONFIG = 60;
 
@@ -88,7 +90,7 @@ function generateETag(value: string): string {
 
 function sortByCheckedAt(items: WorkerCheckResult[]): WorkerCheckResult[] {
   return [...items].sort(
-    (left, right) => Date.parse(left.checkedAt) - Date.parse(right.checkedAt)
+    (left, right) => Date.parse(right.checkedAt) - Date.parse(left.checkedAt)
   );
 }
 
@@ -174,6 +176,7 @@ function buildGroupPayload(
   officialStatusByType: Map<WorkerCheckResult["type"], OfficialStatusResult>,
   info?: GroupInfoRow
 ) {
+  const isUngrouped = groupName === UNGROUPED_KEY;
   const payload = buildPayload(
     results,
     period,
@@ -185,7 +188,7 @@ function buildGroupPayload(
   );
   return {
     groupName,
-    displayName: groupName,
+    displayName: isUngrouped ? UNGROUPED_DISPLAY_NAME : groupName,
     tags: info?.tags ?? "",
     providerTimelines: payload.providerTimelines,
     lastUpdated: payload.lastUpdated,
@@ -232,7 +235,8 @@ function buildAvailabilityStats(rows: AvailabilityRollupRow[]) {
 
 async function loadAvailabilityStats(
   db: DashboardSnapshotExecutor,
-  results: WorkerCheckResult[]
+  results: WorkerCheckResult[],
+  nowMs: number
 ) {
   const ids = results.map((result) => result.id);
   const rows: AvailabilityRollupRow[] = [];
@@ -244,17 +248,44 @@ async function loadAvailabilityStats(
     const placeholders = chunk.map(() => "?").join(", ");
     const result = await db
       .prepare(
-        `SELECT config_id, period, total_checks, operational_count
+        `SELECT
+           config_id,
+           period,
+           SUM(total_checks) AS total_checks,
+           SUM(operational_count) AS operational_count
          FROM availability_rollups
          WHERE config_id IN (${placeholders})
+           AND day_start_ms <= ?
+           AND (
+             (period = '7d' AND day_start_ms >= ?)
+             OR (period = '15d' AND day_start_ms >= ?)
+             OR (period = '30d' AND day_start_ms >= ?)
+           )
+         GROUP BY config_id, period
          ORDER BY config_id, period`
       )
-      .bind(...chunk)
+      .bind(
+        ...chunk,
+        nowMs,
+        nowMs - PERIOD_DAYS["7d"] * 24 * 60 * 60 * 1000,
+        nowMs - PERIOD_DAYS["15d"] * 24 * 60 * 60 * 1000,
+        nowMs - PERIOD_DAYS["30d"] * 24 * 60 * 60 * 1000
+      )
       .all<AvailabilityRollupRow>();
     rows.push(...(result.results ?? []));
   }
 
   return buildAvailabilityStats(rows);
+}
+
+function filterAvailabilityStats(
+  availabilityStats: Record<string, AvailabilityStat[]>,
+  results: WorkerCheckResult[]
+) {
+  const ids = new Set(results.map((result) => result.id));
+  return Object.fromEntries(
+    Object.entries(availabilityStats).filter(([configId]) => ids.has(configId))
+  );
 }
 
 function parseAffectedComponents(value: string | null): string[] | undefined {
@@ -407,7 +438,7 @@ export async function writeDashboardSnapshot(
   const historyByConfig = await loadHistoryByConfig(db, results, nowMs);
   const groupInfoMap = await loadGroupInfoMap(db);
   const groupInfos = toGroupInfoSummaries(groupInfoMap);
-  const availabilityStats = await loadAvailabilityStats(db, results);
+  const availabilityStats = await loadAvailabilityStats(db, results, nowMs);
   const officialStatusByType = await loadOfficialStatuses(db);
 
   for (const period of PERIODS) {
@@ -438,12 +469,18 @@ export async function writeDashboardSnapshot(
   }
 
   const groupNames = new Set(
-    results
-      .map((result) => result.groupName)
-      .filter((groupName): groupName is string => Boolean(groupName))
+    results.map((result) => result.groupName || UNGROUPED_KEY)
   );
   for (const groupName of groupNames) {
-    const groupResults = results.filter((result) => result.groupName === groupName);
+    const groupResults = results.filter((result) =>
+      groupName === UNGROUPED_KEY
+        ? !result.groupName
+        : result.groupName === groupName
+    );
+    const groupAvailabilityStats = filterAvailabilityStats(
+      availabilityStats,
+      groupResults
+    );
     for (const period of PERIODS) {
       const payloadJson = JSON.stringify(
         buildGroupPayload(
@@ -452,7 +489,7 @@ export async function writeDashboardSnapshot(
           period,
           nowMs,
           historyByPeriod.get(period) ?? new Map(),
-          availabilityStats,
+          groupAvailabilityStats,
           officialStatusByType,
           groupInfoMap.get(groupName)
         )

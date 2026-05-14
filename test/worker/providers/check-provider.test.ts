@@ -262,4 +262,59 @@ describe("checkProvider", () => {
     });
     expect(body.contents).toBeUndefined();
   });
+
+  it("aborts provider requests when timeoutMs is reached", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        })
+    );
+
+    const promise = checkProvider(baseConfig, {
+      challenge,
+      fetcher,
+      measurePing: async () => null,
+      now: () => 1_000,
+      timeoutMs: 25,
+    });
+
+    await vi.advanceTimersByTimeAsync(25);
+    const result = await promise;
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("aborted");
+    vi.useRealTimers();
+  });
+
+  it("uses non-streaming Gemini endpoint for streamGenerateContent configs", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        candidates: [{ content: { parts: [{ text: "8" }] } }],
+      })
+    );
+
+    await checkProvider(
+      {
+        ...baseConfig,
+        type: "gemini",
+        endpoint:
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent",
+        model: "gemini-pro",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    const [url] = getFetchCall(fetcher);
+    expect(url).toContain(":generateContent");
+    expect(url).not.toContain(":streamGenerateContent");
+  });
 });

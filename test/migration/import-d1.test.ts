@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAllD1ImportStatements,
   buildCheckConfigStatements,
+  buildAvailabilityRollupStatementsFromHistory,
   serializeD1Statements,
 } from "../../scripts/migration/import-d1";
 
@@ -83,6 +84,7 @@ describe("D1 import statements", () => {
 
       expect(sql).toContain("INSERT INTO check_configs");
       expect(sql).toContain("INSERT INTO check_latest");
+      expect(sql).toContain("INSERT INTO availability_rollups");
       expect(sql).not.toContain("sk-plain");
       expect(sql).not.toContain("-- params:");
     } finally {
@@ -116,6 +118,49 @@ describe("D1 import statements", () => {
 
       expect(statements).toHaveLength(1);
       expect(statements[0].params).not.toContain("");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("backfills availability rollups from imported history", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "check-cx-import-"));
+    try {
+      await writeJsonl(dir, "check_history", [
+        {
+          id: "history-1",
+          config_id: "config-1",
+          status: "operational",
+          latency_ms: 100,
+          ping_latency_ms: 10,
+          checked_at: "2026-05-02T03:04:05.000Z",
+          message: "OK",
+        },
+        {
+          id: "history-2",
+          config_id: "config-1",
+          status: "failed",
+          latency_ms: null,
+          ping_latency_ms: 10,
+          checked_at: "2026-05-02T04:04:05.000Z",
+          message: "failed",
+        },
+      ]);
+
+      const statements = await buildAvailabilityRollupStatementsFromHistory(dir);
+
+      expect(statements).toHaveLength(3);
+      expect(statements[0]).toMatchObject({
+        sql: expect.stringContaining("INSERT INTO availability_rollups"),
+        params: [
+          "config-1",
+          "7d",
+          Date.parse("2026-05-02T00:00:00.000Z"),
+          2,
+          1,
+          Date.parse("2026-05-02T00:00:00.000Z"),
+        ],
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
