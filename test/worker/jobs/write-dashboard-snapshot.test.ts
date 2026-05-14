@@ -6,6 +6,7 @@ import type { WorkerCheckResult } from "../../../src/worker/providers";
 
 interface SnapshotRow {
   payload_json: string;
+  etag: string;
   generated_at_ms: number;
 }
 
@@ -128,6 +129,7 @@ class FakeStatement implements D1StatementLike {
     const key = `${String(this.values[0])}:${String(this.values[1])}`;
     this.db.rows.set(key, {
       payload_json: String(this.values[2]),
+      etag: String(this.values[3]),
       generated_at_ms: Number(this.values[4]),
     });
     return { meta: { changes: 1 } };
@@ -398,14 +400,42 @@ describe("writeDashboardSnapshot", () => {
     expect(db.lastHistoryQuery).toContain("ROW_NUMBER()");
   });
 
+  it("keeps snapshot ETags stable when only generatedAt changes", async () => {
+    const db = new FakeD1();
+    const results = [createResult("core-1", "core")];
+
+    await writeDashboardSnapshot(
+      db,
+      results,
+      Date.parse("2026-05-03T00:00:00.000Z")
+    );
+    const firstPayload = db.rows.get("dashboard:7d")?.payload_json;
+    const firstEtag = db.rows.get("dashboard:7d")?.etag;
+
+    await writeDashboardSnapshot(
+      db,
+      results,
+      Date.parse("2026-05-03T00:01:00.000Z")
+    );
+    const secondPayload = db.rows.get("dashboard:7d")?.payload_json;
+    const secondEtag = db.rows.get("dashboard:7d")?.etag;
+
+    expect(JSON.parse(firstPayload ?? "{}").generatedAt).not.toBe(
+      JSON.parse(secondPayload ?? "{}").generatedAt
+    );
+    expect(firstEtag).toBe(secondEtag);
+  });
+
   it("removes stale group snapshots after writing current group snapshots", async () => {
     const db = new FakeD1();
     db.rows.set("group:stale:7d", {
       payload_json: "{\"groupName\":\"stale\"}",
+      etag: "\"stale\"",
       generated_at_ms: 100,
     });
     db.rows.set("dashboard:7d", {
       payload_json: "{\"total\":0}",
+      etag: "\"dashboard\"",
       generated_at_ms: 100,
     });
 

@@ -88,6 +88,15 @@ function generateETag(value: string): string {
   return `"${(hash >>> 0).toString(16)}"`;
 }
 
+function generatePayloadETag(payload: unknown): string {
+  if (!payload || typeof payload !== "object") {
+    return generateETag(JSON.stringify(payload));
+  }
+  const cacheablePayload = { ...(payload as Record<string, unknown>) };
+  delete cacheablePayload.generatedAt;
+  return generateETag(JSON.stringify(cacheablePayload));
+}
+
 function sortByCheckedAt(items: WorkerCheckResult[]): WorkerCheckResult[] {
   return [...items].sort(
     (left, right) => Date.parse(right.checkedAt) - Date.parse(left.checkedAt)
@@ -448,22 +457,21 @@ export async function writeDashboardSnapshot(
       nowMs
     );
     historyByPeriod.set(period, periodHistoryByConfig);
-    const payloadJson = JSON.stringify(
-      buildPayload(
-        results,
-        period,
-        nowMs,
-        periodHistoryByConfig,
-        groupInfos,
-        availabilityStats,
-        officialStatusByType
-      )
+    const payload = buildPayload(
+      results,
+      period,
+      nowMs,
+      periodHistoryByConfig,
+      groupInfos,
+      availabilityStats,
+      officialStatusByType
     );
+    const payloadJson = JSON.stringify(payload);
     records.push({
       snapshotKey: "dashboard",
       period,
       payloadJson,
-      etag: generateETag(payloadJson),
+      etag: generatePayloadETag(payload),
       generatedAtMs: nowMs,
     });
   }
@@ -482,23 +490,22 @@ export async function writeDashboardSnapshot(
       groupResults
     );
     for (const period of PERIODS) {
-      const payloadJson = JSON.stringify(
-        buildGroupPayload(
-          groupName,
-          groupResults,
-          period,
-          nowMs,
-          historyByPeriod.get(period) ?? new Map(),
-          groupAvailabilityStats,
-          officialStatusByType,
-          groupInfoMap.get(groupName)
-        )
+      const payload = buildGroupPayload(
+        groupName,
+        groupResults,
+        period,
+        nowMs,
+        historyByPeriod.get(period) ?? new Map(),
+        groupAvailabilityStats,
+        officialStatusByType,
+        groupInfoMap.get(groupName)
       );
+      const payloadJson = JSON.stringify(payload);
       records.push({
         snapshotKey: `group:${groupName}`,
         period,
         payloadJson,
-        etag: generateETag(payloadJson),
+        etag: generatePayloadETag(payload),
         generatedAtMs: nowMs,
       });
     }
