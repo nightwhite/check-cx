@@ -1,0 +1,24 @@
+---
+import { DashboardIsland } from "../components/dashboard/dashboard-island";
+import { NotificationBanner } from "../../components/notification-banner";
+import "../styles/global.css";
+---
+
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Check CX</title>
+    <meta
+      name="description"
+      content="Check CX AI provider health dashboard"
+    />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+  </head>
+  <body>
+    <NotificationBanner client:load />
+    <main class="mx-auto min-h-screen w-full max-w-[1600px] px-3 py-8 sm:px-6 md:py-16 lg:px-12">
+      <DashboardIsland client:load />
+    </main>
+  </body>
+</html>

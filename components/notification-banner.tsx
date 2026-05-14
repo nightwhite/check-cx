@@ -4,8 +4,18 @@ import React, { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { X, AlertCircle, Info, AlertTriangle } from "lucide-react";
-import { SystemNotificationRow } from "@/lib/types/database";
+import { z } from "zod";
+import type { SystemNotificationRow } from "@/lib/types/database";
 import { cn } from "@/lib/utils/cn";
+
+const systemNotificationSchema = z.object({
+  id: z.string(),
+  message: z.string(),
+  is_active: z.boolean(),
+  level: z.enum(["info", "warning", "error"]),
+  created_at: z.string(),
+});
+const systemNotificationsSchema = z.array(systemNotificationSchema);
 
 export function NotificationBanner() {
   const [notifications, setNotifications] = useState<SystemNotificationRow[]>([]);
@@ -17,8 +27,10 @@ export function NotificationBanner() {
       try {
         const response = await fetch("/api/notifications");
         if (response.ok) {
-          const data = await response.json();
-          setNotifications(data);
+          const result = systemNotificationsSchema.safeParse(await response.json());
+          if (result.success) {
+            setNotifications(result.data);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch notifications:", error);
