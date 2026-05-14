@@ -5,6 +5,7 @@ import {
   type D1Executor,
   type D1StatementLike,
 } from "../../../src/worker/db/repositories/dashboard-snapshots";
+import { MAX_D1_BATCH_STATEMENTS } from "../../../src/worker/jobs/d1-batch";
 
 interface SnapshotRow {
   snapshot_key: string;
@@ -86,9 +87,18 @@ class FakeStatement implements D1StatementLike {
 
 class FakeD1 implements D1Executor {
   readonly rows = new Map<string, SnapshotRow>();
+  readonly batchCalls: D1StatementLike[][] = [];
 
   prepare(query: string) {
     return new FakeStatement(this, query);
+  }
+
+  async batch(statements: D1StatementLike[]) {
+    this.batchCalls.push(statements);
+    for (const statement of statements) {
+      await statement.run();
+    }
+    return [];
   }
 }
 
@@ -151,5 +161,25 @@ describe("dashboard snapshot repository", () => {
       expect.objectContaining({ snapshotKey: "group:core" })
     );
     await expect(repository.find("group:stale", "7d")).resolves.toBeNull();
+  });
+
+  it("chunks batch writes at the shared D1 statement limit", async () => {
+    const db = new FakeD1();
+    const repository = createDashboardSnapshotRepository(db);
+
+    await repository.upsertMany(
+      Array.from({ length: MAX_D1_BATCH_STATEMENTS + 1 }, (_, index) => ({
+        snapshotKey: `dashboard:${index}`,
+        period: "7d",
+        payloadJson: "{\"total\":1}",
+        etag: `"${index}"`,
+        generatedAtMs: 100 + index,
+      }))
+    );
+
+    expect(db.batchCalls.map((call) => call.length)).toEqual([
+      MAX_D1_BATCH_STATEMENTS,
+      1,
+    ]);
   });
 });

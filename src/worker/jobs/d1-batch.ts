@@ -1,4 +1,4 @@
-const MAX_D1_BATCH_STATEMENTS = 100;
+export const MAX_D1_BATCH_STATEMENTS = 100;
 
 export interface D1BatchExecutor {
   batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;

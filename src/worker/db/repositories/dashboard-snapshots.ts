@@ -1,3 +1,5 @@
+import { MAX_D1_BATCH_STATEMENTS } from "../../jobs/d1-batch";
+
 export interface D1StatementLike {
   bind(...values: unknown[]): D1StatementLike;
   first<T>(): Promise<T | null>;
@@ -37,8 +39,12 @@ async function runBatches(
   db: D1Executor,
   statements: D1StatementLike[]
 ): Promise<void> {
-  for (let index = 0; index < statements.length; index += 100) {
-    await db.batch?.(statements.slice(index, index + 100));
+  for (
+    let index = 0;
+    index < statements.length;
+    index += MAX_D1_BATCH_STATEMENTS
+  ) {
+    await db.batch?.(statements.slice(index, index + MAX_D1_BATCH_STATEMENTS));
   }
 }
 
