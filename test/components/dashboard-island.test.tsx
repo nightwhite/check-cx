@@ -319,7 +319,9 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
     expect(screen.getByText("90.00%")).not.toBeNull();
-    expect(screen.getByText("2 点")).not.toBeNull();
+    expect(screen.getByText("最近 2 次检查")).not.toBeNull();
+    expect(screen.queryByText("过去")).toBeNull();
+    expect(screen.queryByText("现在")).toBeNull();
     expect(screen.getByText("Provider returned HTTP 500")).not.toBeNull();
     expect(screen.getByText("官方状态：OpenAI incident")).not.toBeNull();
   });

@@ -303,9 +303,8 @@ function StatusHistory({ items }: { items: TimelineItem[] }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <span>过去</span>
-        <span>{Math.min(items.length, HISTORY_SEGMENT_COUNT)} 点</span>
-        <span>现在</span>
+        <span>最近 {Math.min(items.length, HISTORY_SEGMENT_COUNT)} 次检查</span>
+        <span>最新</span>
       </div>
       <div className="flex h-9 flex-row-reverse gap-[2px] rounded-md bg-muted/25 p-[3px]">
         {segments.map((segment, index) => (
