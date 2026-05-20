@@ -20,6 +20,8 @@ const RESERVED_METADATA_KEYS = new Set([
   "max_tokens",
   "messages",
   "model",
+  "reasoning",
+  "reasoning_effort",
 ]);
 const GOOGLE_GENERATIVE_API_REGEX =
   /\/v\d+\w*\/models\/[^/:]+:(generateContent|streamGenerateContent)\/?$/;
@@ -154,7 +156,7 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
       model: modelId,
       input: challenge.prompt,
       max_output_tokens: 1,
-      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     };
   }
 
@@ -237,10 +239,18 @@ function extractResponseText(payload: unknown): string {
     return geminiText;
   }
 
-  const outputItem = getObject(getArray(root.output)[0]);
-  const outputContent = getObject(getArray(outputItem?.content)[0]);
-  const responseText = getString(outputContent?.text);
-  return responseText ?? "";
+  for (const outputValue of getArray(root.output)) {
+    const outputItem = getObject(outputValue);
+    for (const contentValue of getArray(outputItem?.content)) {
+      const outputContent = getObject(contentValue);
+      const responseText = getString(outputContent?.text);
+      if (responseText) {
+        return responseText;
+      }
+    }
+  }
+
+  return "";
 }
 
 function getErrorMessage(error: unknown): string {

@@ -230,6 +230,47 @@ describe("checkProvider", () => {
     expect(body.reasoning_effort).toBe("high");
   });
 
+  it("uses official Responses reasoning fields and reads message output text", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        output: [
+          { type: "reasoning" },
+          {
+            type: "message",
+            status: "completed",
+            content: [{ type: "output_text", text: "8" }],
+          },
+        ],
+      })
+    );
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        model: "gpt-5.5",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    const [, init] = getFetchCall(fetcher);
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({
+      model: "gpt-5.5",
+      input: challenge.prompt,
+      max_output_tokens: 1,
+      reasoning: { effort: "medium" },
+    });
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("8");
+  });
+
   it("uses OpenAI-compatible formatting for non-Google Gemini endpoints", async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({ choices: [{ message: { content: "8" } }] })
