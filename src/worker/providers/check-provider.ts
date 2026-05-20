@@ -156,6 +156,7 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
       model: modelId,
       input: challenge.prompt,
       max_output_tokens: 1,
+      stream: true,
       ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     };
   }
@@ -253,6 +254,88 @@ function extractResponseText(payload: unknown): string {
   return "";
 }
 
+function extractTextFromResponseStreamEvent(payload: unknown): string {
+  const root = getObject(payload);
+  if (!root) {
+    return "";
+  }
+
+  if (root.type === "response.output_text.delta") {
+    return getString(root.delta) ?? "";
+  }
+
+  const delta = getString(root.delta);
+  if (delta) {
+    return delta;
+  }
+
+  return extractResponseText(root);
+}
+
+function parseResponseStreamEvent(rawEvent: string): string {
+  let text = "";
+  for (const line of rawEvent.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) {
+      continue;
+    }
+
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") {
+      continue;
+    }
+
+    text += extractTextFromResponseStreamEvent(JSON.parse(data));
+  }
+  return text;
+}
+
+async function readTextFromResponseStream(
+  response: Response,
+  startedAt: number,
+  now: () => number
+) {
+  if (!response.body) {
+    return {
+      text: "",
+      firstChunkLatencyMs: Math.max(0, now() - startedAt),
+    };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let firstChunkLatencyMs: number | null = null;
+  let buffer = "";
+  let text = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    firstChunkLatencyMs ??= Math.max(0, now() - startedAt);
+    buffer += decoder.decode(value, { stream: true });
+
+    let eventEndIndex = buffer.indexOf("\n\n");
+    while (eventEndIndex !== -1) {
+      const rawEvent = buffer.slice(0, eventEndIndex);
+      buffer = buffer.slice(eventEndIndex + 2);
+      text += parseResponseStreamEvent(rawEvent);
+      eventEndIndex = buffer.indexOf("\n\n");
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    text += parseResponseStreamEvent(buffer);
+  }
+
+  return {
+    text,
+    firstChunkLatencyMs: firstChunkLatencyMs ?? Math.max(0, now() - startedAt),
+  };
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -282,6 +365,9 @@ export async function checkProvider(
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   );
   const startedAt = now();
+  const isResponsesRequest = /\/responses\/?$/.test(
+    config.endpoint.split("?")[0]
+  );
 
   try {
     const response = await fetcher(buildRequestUrl(config), {
@@ -290,7 +376,7 @@ export async function checkProvider(
       body: JSON.stringify(buildRequestBody(config, challenge)),
       signal: controller.signal,
     });
-    const latencyMs = Math.max(0, now() - startedAt);
+    let latencyMs = Math.max(0, now() - startedAt);
 
     if (!response.ok) {
       return {
@@ -305,8 +391,19 @@ export async function checkProvider(
       };
     }
 
-    const payload = await response.json();
-    const text = extractResponseText(payload);
+    let text: string;
+    if (isResponsesRequest) {
+      const streamResult = await readTextFromResponseStream(
+        response,
+        startedAt,
+        now
+      );
+      text = streamResult.text;
+      latencyMs = streamResult.firstChunkLatencyMs;
+    } else {
+      const payload = await response.json();
+      text = extractResponseText(payload);
+    }
     const validation = validateResponse(text, challenge.expectedAnswer);
     const status: WorkerHealthStatus = validation.valid
       ? latencyMs > DEGRADED_THRESHOLD_MS
