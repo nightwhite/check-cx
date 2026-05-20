@@ -27,7 +27,7 @@ const PERIODS: Array<{ value: AvailabilityPeriod; label: string }> = [
   { value: "15d", label: "15 天" },
   { value: "30d", label: "30 天" },
 ];
-const UNGROUPED_KEY = "__ungrouped__";
+const SITE_NAME = "SU8";
 const HISTORY_SEGMENT_COUNT = 60;
 
 const STATUS_LABEL: Record<string, string> = {
@@ -60,8 +60,12 @@ const STATUS_PILL_CLASS: Record<string, string> = {
 const PROVIDER_LABEL: Record<string, string> = {
   openai: "OpenAI",
   gemini: "Gemini",
-  anthropic: "Anthropic",
+  anthropic: "Claude",
 };
+
+function getProviderFamily(type: string) {
+  return PROVIDER_LABEL[type] ?? type;
+}
 
 function formatLatency(value: number | null | undefined) {
   return typeof value === "number" ? `${Math.round(value)} ms` : "—";
@@ -84,16 +88,16 @@ function formatCountdown(ms: number | null) {
   return minutes > 0 ? `${minutes}m ${rest.toString().padStart(2, "0")}s` : `${rest}s`;
 }
 
-function getGroups(data: DashboardData | null) {
-  const groups = new Set<string>();
+function getProviderFamilies(data: DashboardData | null) {
+  const families = new Set<string>();
   for (const timeline of data?.providerTimelines ?? []) {
-    groups.add(timeline.latest.groupName || UNGROUPED_KEY);
+    families.add(getProviderFamily(timeline.latest.type));
   }
-  return [...groups].sort((left, right) => left.localeCompare(right));
+  return [...families].sort((left, right) => left.localeCompare(right));
 }
 
-function getGroupInfo(data: DashboardData | null, groupName: string) {
-  return data?.groupInfos.find((info) => info.groupName === groupName) ?? null;
+function getSiteInfo(data: DashboardData | null) {
+  return data?.groupInfos.find((info) => info.groupName === SITE_NAME) ?? null;
 }
 
 function getAvailabilityStat(
@@ -115,8 +119,8 @@ function matchesSearch(timeline: ProviderTimeline, query: string) {
     timeline.latest.name,
     timeline.latest.model,
     timeline.latest.type,
+    getProviderFamily(timeline.latest.type),
     timeline.latest.endpoint,
-    timeline.latest.groupName ?? "",
   ]
     .join(" ")
     .toLowerCase();
@@ -124,7 +128,7 @@ function matchesSearch(timeline: ProviderTimeline, query: string) {
   return target.includes(query.toLowerCase());
 }
 
-function getInitialGroup() {
+function getInitialProviderFamily() {
   if (typeof window === "undefined") {
     return "all";
   }
@@ -471,7 +475,7 @@ export function DashboardIsland() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [period, setPeriod] = useState<AvailabilityPeriod>("30d");
   const [query, setQuery] = useState("");
-  const [group, setGroup] = useState(getInitialGroup);
+  const [providerFamily, setProviderFamily] = useState(getInitialProviderFamily);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(null);
@@ -551,25 +555,31 @@ export function DashboardIsland() {
     return () => window.clearInterval(interval);
   }, [data?.pollIntervalMs, latestCheckTimestamp]);
 
-  const groups = useMemo(() => getGroups(data), [data]);
+  const providerFamilies = useMemo(() => getProviderFamilies(data), [data]);
+  const activeProviderFamily = useMemo(() => {
+    if (providerFamily === "all") {
+      return "all";
+    }
+
+    return (
+      providerFamilies.find(
+        (family) => family.toLowerCase() === providerFamily.toLowerCase()
+      ) ?? providerFamily
+    );
+  }, [providerFamilies, providerFamily]);
   const timelines = useMemo(() => {
     return (data?.providerTimelines ?? [])
       .filter((timeline) => {
-        if (group === "all") {
+        if (activeProviderFamily === "all") {
           return true;
         }
-        if (group === UNGROUPED_KEY) {
-          return !timeline.latest.groupName;
-        }
-        return timeline.latest.groupName === group;
+        return getProviderFamily(timeline.latest.type).toLowerCase() ===
+          activeProviderFamily.toLowerCase();
       })
       .filter((timeline) => matchesSearch(timeline, query))
       .sort((left, right) => left.latest.name.localeCompare(right.latest.name));
-  }, [data, group, query]);
-  const selectedGroupInfo = useMemo(
-    () => (group === "all" ? null : getGroupInfo(data, group)),
-    [data, group]
-  );
+  }, [activeProviderFamily, data, query]);
+  const siteInfo = useMemo(() => getSiteInfo(data), [data]);
   const summary = useMemo(() => {
     const counts = new Map<string, number>();
     for (const timeline of timelines) {
@@ -580,12 +590,6 @@ export function DashboardIsland() {
   const overallStatus = getOverallStatus(timelines);
   const overallLabel =
     overallStatus === "unknown" ? "暂无数据" : STATUS_LABEL[overallStatus] ?? overallStatus;
-  const displayName =
-    group === "all"
-      ? "Check CX"
-      : group === UNGROUPED_KEY
-        ? "未分组"
-        : selectedGroupInfo?.groupName ?? group;
   const countdown = formatCountdown(timeToNextRefresh);
 
   return (
@@ -608,21 +612,21 @@ export function DashboardIsland() {
             </div>
             <div className="space-y-3">
               <h1 className="text-5xl font-black tracking-normal text-foreground md:text-7xl">
-                {displayName}
+                {SITE_NAME}
               </h1>
               <div className="flex flex-wrap items-center gap-2">
-                {selectedGroupInfo?.websiteUrl && (
+                {siteInfo?.websiteUrl && (
                   <a
                     className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium text-muted-foreground transition hover:text-foreground"
-                    href={selectedGroupInfo.websiteUrl}
+                    href={siteInfo.websiteUrl}
                     rel="noreferrer"
                     target="_blank"
                   >
-                    {selectedGroupInfo.websiteUrl}
+                    {siteInfo.websiteUrl}
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
-                <GroupTags tags={selectedGroupInfo?.tags} />
+                <GroupTags tags={siteInfo?.tags} />
               </div>
             </div>
           </div>
@@ -673,29 +677,29 @@ export function DashboardIsland() {
 
       <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/80 p-3 shadow-sm lg:flex-row lg:items-center">
         <label className="relative block min-w-0 flex-1">
-          <span className="sr-only">搜索 Provider、模型、端点或分组</span>
+          <span className="sr-only">搜索 Provider、模型或端点</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             id="provider-search"
             name="provider-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索 Provider、模型、端点或分组"
+            placeholder="搜索 Provider、模型或端点"
             className="h-10 w-full rounded-full border border-border bg-background pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-foreground/40"
           />
         </label>
         <select
-          id="group-filter"
-          name="group-filter"
-          aria-label="分组筛选"
-          value={group}
-          onChange={(event) => setGroup(event.target.value)}
+          id="provider-family-filter"
+          name="provider-family-filter"
+          aria-label="Provider 筛选"
+          value={activeProviderFamily}
+          onChange={(event) => setProviderFamily(event.target.value)}
           className="h-10 rounded-full border border-border bg-background px-3 text-sm outline-none"
         >
-          <option value="all">全部分组</option>
-          {groups.map((item) => (
+          <option value="all">全部 Provider</option>
+          {providerFamilies.map((item) => (
             <option key={item} value={item}>
-              {item === UNGROUPED_KEY ? "未分组" : item}
+              {item}
             </option>
           ))}
         </select>

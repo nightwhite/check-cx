@@ -55,6 +55,16 @@ export interface PublicStatusPayload {
   }>;
 }
 
+const PROVIDER_GROUP_LABEL: Record<string, string> = {
+  openai: "OpenAI",
+  gemini: "Gemini",
+  anthropic: "Claude",
+};
+
+function getProviderGroup(type: string): string {
+  return PROVIDER_GROUP_LABEL[type] ?? type;
+}
+
 function toPublicStatus(status: string | undefined): PublicProviderStatus {
   if (status === "operational" || status === "degraded" || status === "maintenance") {
     return status;
@@ -141,7 +151,7 @@ export function buildPublicStatusPayload(
       name: latest.name ?? id,
       type: latest.type ?? "unknown",
       model: latest.model ?? null,
-      group: latest.groupName ?? null,
+      group: latest.type ? getProviderGroup(latest.type) : null,
       status: toPublicStatus(latest.status),
       latencyMs: typeof latest.latencyMs === "number" ? latest.latencyMs : null,
       checkedAt: toIsoDate(latest.checkedAt),

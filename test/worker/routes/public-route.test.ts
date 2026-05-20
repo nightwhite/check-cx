@@ -59,7 +59,7 @@ function createSnapshotPayload() {
           type: "openai",
           endpoint: "https://api.openai.com/v1/chat/completions",
           model: "gpt-4o",
-          groupName: "core",
+          groupName: "SU8",
           status: "operational",
           latencyMs: 320,
           pingLatencyMs: 20,
@@ -76,7 +76,7 @@ function createSnapshotPayload() {
           type: "gemini",
           endpoint: "https://generativelanguage.googleapis.com",
           model: "gemini-2.5-flash",
-          groupName: "edge",
+          groupName: "SU8",
           status: "degraded",
           latencyMs: 7_200,
           pingLatencyMs: null,
@@ -149,7 +149,7 @@ describe("public status routes", () => {
           name: "OpenAI GPT-4o",
           type: "openai",
           model: "gpt-4o",
-          group: "core",
+          group: "OpenAI",
           status: "operational",
           latencyMs: 320,
           checkedAt: "2026-05-20T00:00:00.000Z",
@@ -164,7 +164,7 @@ describe("public status routes", () => {
           name: "Gemini Flash",
           type: "gemini",
           model: "gemini-2.5-flash",
-          group: "edge",
+          group: "Gemini",
           status: "degraded",
           latencyMs: 7_200,
           checkedAt: "2026-05-20T00:01:00.000Z",
@@ -268,7 +268,7 @@ describe("public status routes", () => {
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
     expect(response.headers.get("ETag")).toMatch(/^".+"$/);
     expect(svg).toContain("<svg");
-    expect(svg).toContain("Check CX Status");
+    expect(svg).toContain("SU8 Status");
     expect(svg).toContain("Degraded");
     expect(svg).toContain("OpenAI GPT-4o");
     expect(svg).not.toContain("https://api.openai.com");

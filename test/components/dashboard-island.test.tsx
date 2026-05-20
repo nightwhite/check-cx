@@ -33,7 +33,7 @@ const baseData: DashboardData = {
           checkedAt: "2026-05-03T00:00:00.000Z",
           affectedComponents: ["API"],
         },
-        groupName: "core",
+        groupName: "SU8",
       },
       items: [
         {
@@ -47,7 +47,7 @@ const baseData: DashboardData = {
           pingLatencyMs: 12,
           checkedAt: "2026-05-03T00:00:00.000Z",
           message: "OK",
-          groupName: "core",
+          groupName: "SU8",
         },
         {
           id: "core-1",
@@ -60,16 +60,16 @@ const baseData: DashboardData = {
           pingLatencyMs: 12,
           checkedAt: "2026-05-02T00:00:00.000Z",
           message: "Provider returned HTTP 500",
-          groupName: "core",
+          groupName: "SU8",
         },
       ],
     },
   ],
   groupInfos: [
     {
-      groupName: "core",
-      websiteUrl: "https://core.example",
-      tags: "prod,core",
+      groupName: "SU8",
+      websiteUrl: "https://www.su8.codes",
+      tags: "prod,su8",
     },
   ],
   lastUpdated: "2026-05-03T00:00:00.000Z",
@@ -202,8 +202,8 @@ describe("DashboardIsland", () => {
     expect(screen.getByText("Fresh")).not.toBeNull();
   });
 
-  it("initializes the group filter from group deep links", async () => {
-    window.history.replaceState({}, "", "/group/core");
+  it("uses SU8 as the public site identity instead of the database group name", async () => {
+    window.history.replaceState({}, "", "/group/OpenAI");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => jsonResponse(baseData))
@@ -214,11 +214,14 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByDisplayValue("core")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "SU8" })).not.toBeNull();
+    expect(screen.getByDisplayValue("OpenAI")).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Check CX" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "SU8", level: 2 })).toBeNull();
   });
 
-  it("filters ungrouped deep links using the legacy sentinel group", async () => {
-    window.history.replaceState({}, "", "/group/__ungrouped__");
+  it("filters group deep links by provider family rather than database group name", async () => {
+    window.history.replaceState({}, "", "/group/Claude");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -227,12 +230,13 @@ describe("DashboardIsland", () => {
           providerTimelines: [
             ...baseData.providerTimelines,
             {
-              id: "solo-1",
+              id: "claude-1",
               latest: {
                 ...baseData.providerTimelines[0].latest,
-                id: "solo-1",
-                name: "Ungrouped",
-                groupName: null,
+                id: "claude-1",
+                name: "Claude",
+                type: "anthropic",
+                groupName: "SU8",
               },
               items: [],
             },
@@ -246,13 +250,15 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByRole("heading", { name: "Ungrouped" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "SU8" })).not.toBeNull();
+    expect(screen.getByDisplayValue("Claude")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "OpenAI" })).toBeNull();
   });
 
 
-  it("renders accessible filters, group metadata, availability, timeline, message, and official status", async () => {
-    window.history.replaceState({}, "", "/group/core");
+  it("renders accessible filters, SU8 metadata, availability, timeline, message, and official status", async () => {
+    window.history.replaceState({}, "", "/group/OpenAI");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => jsonResponse(baseData))
@@ -264,10 +270,10 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByLabelText("搜索 Provider、模型、端点或分组")).not.toBeNull();
-    expect(screen.getByLabelText("分组筛选")).not.toBeNull();
+    expect(screen.getByLabelText("搜索 Provider、模型或端点")).not.toBeNull();
+    expect(screen.getByLabelText("Provider 筛选")).not.toBeNull();
     expect(screen.getByText("Status Page")).not.toBeNull();
-    expect(screen.getByText("https://core.example")).not.toBeNull();
+    expect(screen.getByText("https://www.su8.codes")).not.toBeNull();
     expect(screen.getByText("prod")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "7 天" }));
     await act(async () => {
