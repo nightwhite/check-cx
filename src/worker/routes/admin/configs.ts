@@ -6,6 +6,7 @@ import { nowMs, routeError } from "./helpers";
 import {
   AdminConflictError,
   AdminNotFoundError,
+  AdminUnavailableError,
   optionalBoolean,
   optionalString,
   providerType,
@@ -29,7 +30,7 @@ function baseConfigPayload(body: Record<string, unknown>, now = nowMs()) {
 function getEncryptionKey(env: Env): string {
   const value = env.CONFIG_ENCRYPTION_KEY;
   if (typeof value !== "string" || value.length === 0) {
-    throw new Error("CONFIG_ENCRYPTION_KEY is required");
+    throw new AdminUnavailableError("配置加密密钥未配置");
   }
   return value;
 }

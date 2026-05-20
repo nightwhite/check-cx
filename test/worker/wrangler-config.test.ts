@@ -13,12 +13,10 @@ function parseWranglerConfig() {
 }
 
 describe("wrangler static assets routing", () => {
-  it("routes API and canonical group requests to the worker before SPA asset handling", () => {
+  it("routes all requests to the worker before SPA asset handling", () => {
     const config = parseWranglerConfig();
 
     expect(config.assets?.not_found_handling).toBe("single-page-application");
-    expect(config.assets?.run_worker_first).toEqual(
-      expect.arrayContaining(["/api/*", "/group/SU8", "/group/SU8/"])
-    );
+    expect(config.assets?.run_worker_first).toBe(true);
   });
 });

@@ -22,6 +22,10 @@ interface TemplateTypeRow {
   type: AdminProviderType;
 }
 
+interface ReferenceCountRow {
+  count: number;
+}
+
 function toRecord(row: ModelRow): AdminModelRecord {
   return {
     id: row.id,
@@ -72,6 +76,14 @@ export function createAdminModelRepository(db: AdminD1Executor) {
         .prepare("SELECT id, type FROM check_request_templates WHERE id = ?")
         .bind(id)
         .first<TemplateTypeRow>();
+    },
+
+    async countConfigs(id: string) {
+      const row = await db
+        .prepare("SELECT COUNT(*) AS count FROM check_configs WHERE model_id = ?")
+        .bind(id)
+        .first<ReferenceCountRow>();
+      return row?.count ?? 0;
     },
 
     async update(id: string, input: UpdateAdminModelInput) {

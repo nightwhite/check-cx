@@ -76,9 +76,12 @@ export const adminModelRoutes = new Hono<{ Bindings: Env }>()
   })
   .delete("/:id", async (c) => {
     try {
-      const deleted = await createAdminModelRepository(c.env.DB).delete(
-        c.req.param("id")
-      );
+      const repository = createAdminModelRepository(c.env.DB);
+      const modelId = c.req.param("id");
+      if ((await repository.countConfigs(modelId)) > 0) {
+        throw new AdminConflictError("模型仍被配置引用，无法删除");
+      }
+      const deleted = await repository.delete(modelId);
       if (!deleted) {
         throw new AdminNotFoundError("模型不存在");
       }

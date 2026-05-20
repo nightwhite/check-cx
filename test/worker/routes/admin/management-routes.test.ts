@@ -48,6 +48,12 @@ async function createEnv() {
   } as unknown as Env;
 }
 
+async function createEnvWithoutEncryptionKey() {
+  const env = await createEnv();
+  delete (env as Partial<Env>).CONFIG_ENCRYPTION_KEY;
+  return env;
+}
+
 async function loginCookie(app: ReturnType<typeof createWorkerApp>, env: Env) {
   const response = await app.request(
     "http://example.com/api/admin/session",
@@ -415,6 +421,77 @@ describe("admin management routes", () => {
       expect(deletion.status).toBe(404);
       await expect(deletion.json()).resolves.toEqual({ error: item.error });
     }
+  });
+
+  it("returns a structured 503 when config encryption is not configured", async () => {
+    const app = createWorkerApp();
+    const env = await createEnvWithoutEncryptionKey();
+    const cookie = await loginCookie(app, env);
+
+    const response = await app.request(
+      "http://example.com/api/admin/configs",
+      jsonRequest("POST", cookie, {
+        name: "OpenAI primary",
+        type: "openai",
+        modelId: "model-1",
+        endpoint: "https://api.openai.com/v1/responses",
+        apiKey: "sk-test",
+        enabled: true,
+        isMaintenance: false,
+        groupName: "SU8",
+      }),
+      env
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "配置加密密钥未配置",
+    });
+  });
+
+  it("returns 409 when deleting a model that is still used by configs", async () => {
+    const app = createWorkerApp();
+    const env = await createEnv();
+    const cookie = await loginCookie(app, env);
+
+    const modelResponse = await app.request(
+      "http://example.com/api/admin/models",
+      jsonRequest("POST", cookie, {
+        type: "openai",
+        model: "gpt-5.5",
+        templateId: null,
+      }),
+      env
+    );
+    expect(modelResponse.status).toBe(201);
+    const model = (await modelResponse.json()) as { id: string };
+
+    const configResponse = await app.request(
+      "http://example.com/api/admin/configs",
+      jsonRequest("POST", cookie, {
+        name: "OpenAI primary",
+        type: "openai",
+        modelId: model.id,
+        endpoint: "https://api.openai.com/v1/responses",
+        apiKey: "sk-test",
+        enabled: true,
+        isMaintenance: false,
+        groupName: "SU8",
+      }),
+      env
+    );
+    expect(configResponse.status).toBe(201);
+
+    const deletion = await app.request(
+      `http://example.com/api/admin/models/${model.id}`,
+      { method: "DELETE", headers: { Cookie: cookie } },
+      env
+    );
+
+    expect(deletion.status).toBe(409);
+    await expect(deletion.json()).resolves.toEqual({
+      error: "模型仍被配置引用，无法删除",
+    });
   });
 
   it("returns summary and runtime status for authenticated admins", async () => {
