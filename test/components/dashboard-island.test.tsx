@@ -274,7 +274,8 @@ describe("DashboardIsland", () => {
     expect(screen.getByLabelText("Provider 筛选")).not.toBeNull();
     expect(screen.getByText("Status Page")).not.toBeNull();
     expect(screen.getByText("https://www.su8.codes")).not.toBeNull();
-    expect(screen.getByText("prod")).not.toBeNull();
+    expect(screen.queryByText("prod")).toBeNull();
+    expect(screen.queryByText("su8")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "7 天" }));
     await act(async () => {
       await Promise.resolve();

@@ -20,7 +20,6 @@ import type {
   TimelineItem,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { parseTagList, getTagColorClass } from "@/lib/utils/tag-colors";
 
 const PERIODS: Array<{ value: AvailabilityPeriod; label: string }> = [
   { value: "7d", label: "7 天" },
@@ -244,29 +243,6 @@ function CornerPlus({ className }: { className?: string }) {
       <line x1="12" y1="0" x2="12" y2="24" />
       <line x1="0" y1="12" x2="24" y2="12" />
     </svg>
-  );
-}
-
-function GroupTags({ tags }: { tags?: string | null }) {
-  const items = parseTagList(tags);
-  if (items.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {items.map((tag) => (
-        <span
-          key={tag}
-          className={cn(
-            "rounded-full px-2.5 py-1 text-xs font-medium",
-            getTagColorClass(tag)
-          )}
-        >
-          {tag}
-        </span>
-      ))}
-    </div>
   );
 }
 
@@ -626,7 +602,6 @@ export function DashboardIsland() {
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
-                <GroupTags tags={siteInfo?.tags} />
               </div>
             </div>
           </div>
