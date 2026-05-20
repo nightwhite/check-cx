@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  Check,
+  ChevronDown,
   ExternalLink,
   Radio,
   RefreshCcw,
@@ -264,34 +266,106 @@ function ProviderFamilySwitch({
     { value: "all", label: "全部" },
     ...families.map((family) => ({ value: family, label: family })),
   ];
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const activeLabel = activeFamily === "all" ? "全部" : activeFamily;
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isOpen]);
 
   return (
-    <div
-      aria-label="Provider 筛选"
-      className="inline-flex min-w-0 flex-wrap items-center gap-1 rounded-full border border-border/70 bg-background/80 p-1 shadow-sm"
-      role="group"
-    >
-      {options.map((option) => {
-        const isActive =
-          activeFamily.toLowerCase() === option.value.toLowerCase();
+    <div ref={rootRef} className="relative min-w-[180px]">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-label={`Provider 筛选 ${activeLabel}`}
+        onClick={() => setIsOpen((value) => !value)}
+        className={cn(
+          "flex h-10 w-full items-center justify-between gap-3 rounded-full border bg-background px-3.5 text-left text-sm shadow-sm transition",
+          isOpen
+            ? "border-foreground/30 ring-4 ring-foreground/5"
+            : "border-border/70 hover:border-foreground/25"
+        )}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]" />
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Provider
+          </span>
+          <span className="truncate font-bold text-foreground">{activeLabel}</span>
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition",
+            isOpen && "rotate-180 text-foreground"
+          )}
+        />
+      </button>
 
-        return (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={isActive}
-            onClick={() => setProviderFamily(option.value)}
-            className={cn(
-              "h-8 rounded-full px-3 text-xs font-semibold transition",
-              isActive
-                ? "bg-foreground text-background"
-                : "text-muted-foreground hover:bg-muted/55 hover:text-foreground"
-            )}
-          >
-            {option.label}
-          </button>
-        );
-      })}
+      {isOpen && (
+        <div
+          role="listbox"
+          aria-label="Provider 筛选"
+          className="absolute left-0 top-12 z-30 w-full min-w-[220px] overflow-hidden rounded-2xl border border-border/70 bg-background/95 p-1.5 shadow-xl shadow-foreground/10 backdrop-blur"
+        >
+          {options.map((option) => {
+            const isActive =
+              activeFamily.toLowerCase() === option.value.toLowerCase();
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={isActive}
+                onClick={() => {
+                  setProviderFamily(option.value);
+                  setIsOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+                  isActive
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                )}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={cn(
+                      "h-2 w-2 rounded-full",
+                      isActive ? "bg-background" : "bg-muted-foreground/45"
+                    )}
+                  />
+                  <span className="truncate">{option.label}</span>
+                </span>
+                {isActive && <Check className="h-4 w-4" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

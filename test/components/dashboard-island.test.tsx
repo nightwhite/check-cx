@@ -249,7 +249,7 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
     expect(screen.getByRole("heading", { name: "SU8.Codes" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "OpenAI" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Provider 筛选 OpenAI" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("heading", { name: "Check CX" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "SU8", level: 2 })).toBeNull();
     expect(screen.queryByRole("heading", { name: "SU8 gpt-5.5" })).toBeNull();
@@ -287,7 +287,7 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
     expect(screen.getByRole("heading", { name: "SU8.Codes" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Claude" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Provider 筛选 Claude" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "OpenAI" })).toBeNull();
   });
@@ -307,7 +307,8 @@ describe("DashboardIsland", () => {
     });
 
     expect(screen.getByLabelText("搜索 Provider、模型或端点")).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Provider 筛选" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Provider 筛选 OpenAI" })).not.toBeNull();
+    expect(screen.queryByRole("group", { name: "Provider 筛选" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Provider 筛选" })).toBeNull();
     expect(screen.getByText("Status Page")).not.toBeNull();
     expect(screen.getByText("https://www.su8.codes")).not.toBeNull();
@@ -326,5 +327,52 @@ describe("DashboardIsland", () => {
     expect(screen.queryByText("现在")).toBeNull();
     expect(screen.getByText("Provider returned HTTP 500")).not.toBeNull();
     expect(screen.getByText("官方状态：OpenAI incident")).not.toBeNull();
+  });
+
+  it("uses a designed dropdown for provider filtering", async () => {
+    window.history.replaceState({}, "", "/");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          ...baseData,
+          providerTimelines: [
+            ...baseData.providerTimelines,
+            {
+              id: "claude-1",
+              latest: {
+                ...baseData.providerTimelines[0].latest,
+                id: "claude-1",
+                name: "Claude",
+                type: "anthropic",
+                groupName: "SU8",
+              },
+              items: [],
+            },
+          ],
+        })
+      )
+    );
+
+    render(<DashboardIsland />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Provider 筛选 全部" });
+    expect(trigger.getAttribute("aria-haspopup")).toBe("listbox");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("listbox", { name: "Provider 筛选" })).not.toBeNull();
+    expect(screen.getByRole("option", { name: "OpenAI" })).not.toBeNull();
+    expect(screen.getByRole("option", { name: "Claude" })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("option", { name: "Claude" }));
+    expect(screen.getByRole("button", { name: "Provider 筛选 Claude" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("heading", { name: "gpt-5.5" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
   });
 });
