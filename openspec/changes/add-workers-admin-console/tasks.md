@@ -12,9 +12,9 @@
 
 ## 3. Admin Data Layer
 
-- [ ] 3.1 Add repository tests for templates, models, configs, groups, notifications, and runtime status.
-- [ ] 3.2 Implement D1 repositories with explicit SQL and no plaintext provider key reads.
-- [ ] 3.3 Add Worker-safe `encryptProviderKey()` and tests.
+- [x] 3.1 Add repository tests for templates, models, configs, groups, notifications, and runtime status.
+- [x] 3.2 Implement D1 repositories with explicit SQL and no plaintext provider key reads.
+- [x] 3.3 Add Worker-safe `encryptProviderKey()` and tests.
 
 ## 4. Admin API
 
