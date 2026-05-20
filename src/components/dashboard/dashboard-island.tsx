@@ -249,6 +249,51 @@ function PeriodSwitch({
   );
 }
 
+function ProviderFamilySwitch({
+  families,
+  activeFamily,
+  setProviderFamily,
+}: {
+  families: string[];
+  activeFamily: string;
+  setProviderFamily: (family: string) => void;
+}) {
+  const options = [
+    { value: "all", label: "全部" },
+    ...families.map((family) => ({ value: family, label: family })),
+  ];
+
+  return (
+    <div
+      aria-label="Provider 筛选"
+      className="inline-flex min-w-0 flex-wrap items-center gap-1 rounded-full border border-border/70 bg-background/80 p-1 shadow-sm"
+      role="group"
+    >
+      {options.map((option) => {
+        const isActive =
+          activeFamily.toLowerCase() === option.value.toLowerCase();
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => setProviderFamily(option.value)}
+            className={cn(
+              "h-8 rounded-full px-3 text-xs font-semibold transition",
+              isActive
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:bg-muted/55 hover:text-foreground"
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function StatusHistory({ items }: { items: TimelineItem[] }) {
   const segments = Array.from(
     { length: HISTORY_SEGMENT_COUNT },
@@ -614,21 +659,11 @@ export function DashboardIsland() {
             className="h-10 w-full rounded-full border border-border bg-background pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-foreground/40"
           />
         </label>
-        <select
-          id="provider-family-filter"
-          name="provider-family-filter"
-          aria-label="Provider 筛选"
-          value={activeProviderFamily}
-          onChange={(event) => setProviderFamily(event.target.value)}
-          className="h-10 rounded-full border border-border bg-background px-3 text-sm outline-none"
-        >
-          <option value="all">全部 Provider</option>
-          {providerFamilies.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
+        <ProviderFamilySwitch
+          families={providerFamilies}
+          activeFamily={activeProviderFamily}
+          setProviderFamily={setProviderFamily}
+        />
         <PeriodSwitch period={period} setPeriod={setPeriod} />
         <button
           type="button"

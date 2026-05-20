@@ -249,7 +249,7 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
     expect(screen.getByRole("heading", { name: "SU8" })).not.toBeNull();
-    expect(screen.getByDisplayValue("OpenAI")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "OpenAI" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("heading", { name: "Check CX" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "SU8", level: 2 })).toBeNull();
     expect(screen.queryByRole("heading", { name: "SU8 gpt-5.5" })).toBeNull();
@@ -287,7 +287,7 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
     expect(screen.getByRole("heading", { name: "SU8" })).not.toBeNull();
-    expect(screen.getByDisplayValue("Claude")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Claude" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "OpenAI" })).toBeNull();
   });
@@ -307,7 +307,8 @@ describe("DashboardIsland", () => {
     });
 
     expect(screen.getByLabelText("搜索 Provider、模型或端点")).not.toBeNull();
-    expect(screen.getByLabelText("Provider 筛选")).not.toBeNull();
+    expect(screen.getByRole("group", { name: "Provider 筛选" })).not.toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Provider 筛选" })).toBeNull();
     expect(screen.getByText("Status Page")).not.toBeNull();
     expect(screen.getByText("https://www.su8.codes")).not.toBeNull();
     expect(screen.queryByText("prod")).toBeNull();
