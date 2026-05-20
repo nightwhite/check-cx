@@ -16,6 +16,7 @@ export interface StatementSyncLike {
 export interface DatabaseLike {
   exec(query: string): void;
   prepare(query: string): StatementSyncLike;
+  getRowsModified(): number;
 }
 
 let sqlPromise: Promise<SqlJsStatic> | null = null;
@@ -64,7 +65,7 @@ class SqlJsStatementAdapter implements StatementSyncLike {
 
   run(...values: unknown[]) {
     this.db.run(this.query, toSqlParams(values));
-    return { changes: 0 };
+    return { changes: this.db.getRowsModified() };
   }
 }
 
@@ -77,6 +78,10 @@ class SqlJsDatabaseAdapter implements DatabaseLike {
 
   prepare(query: string) {
     return new SqlJsStatementAdapter(this.db, query);
+  }
+
+  getRowsModified() {
+    return this.db.getRowsModified();
   }
 }
 

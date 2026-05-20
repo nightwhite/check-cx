@@ -24,6 +24,35 @@ const jsonResponse = (body: unknown, init?: ResponseInit) =>
     headers: { "content-type": "application/json" },
   });
 
+const textStreamResponse = (
+  chunks: string[],
+  onChunk?: (index: number) => void
+) => {
+  const encoder = new TextEncoder();
+  let index = 1;
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        onChunk?.(0);
+        controller.enqueue(encoder.encode(chunks[0]));
+      },
+      pull(controller) {
+        if (index >= chunks.length) {
+          controller.close();
+          return;
+        }
+        onChunk?.(index);
+        controller.enqueue(encoder.encode(chunks[index]));
+        index += 1;
+      },
+    }),
+    {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    }
+  );
+};
+
 type FetchCall = [string, RequestInit];
 
 function getFetchCall(fetcher: ReturnType<typeof vi.fn>): FetchCall {
@@ -228,6 +257,122 @@ describe("checkProvider", () => {
     const body = JSON.parse(String(init.body));
     expect(body.model).toBe("o1");
     expect(body.reasoning_effort).toBe("high");
+  });
+
+  it("uses official Responses reasoning fields and reads message output text", async () => {
+    const fetcher = vi.fn(async () =>
+      textStreamResponse([
+        'data: {"type":"response.output_item.added","item":{"type":"reasoning"}}\n\n',
+        'data: {"type":"response.output_text.delta","delta":"8"}\n\n',
+        'data: {"type":"response.output_text.done","text":"8"}\n\n',
+        'data: {"type":"response.completed"}\n\n',
+      ])
+    );
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        model: "gpt-5.5",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    const [, init] = getFetchCall(fetcher);
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({
+      model: "gpt-5.5",
+      input: challenge.prompt,
+      max_output_tokens: 1,
+      reasoning: { effort: "medium" },
+    });
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("8");
+  });
+
+  it("measures Responses latency from the first streamed response chunk", async () => {
+    let nowMs = 1_000;
+    const fetcher = vi.fn(async () => {
+      nowMs = 2_200;
+      return textStreamResponse(
+        [
+          'data: {"type":"response.output_text.delta","delta":"8"}\n\n',
+          'data: {"type":"response.output_text.done","text":"8"}\n\n',
+        ]
+      );
+    });
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        model: "gpt-5.5",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => nowMs,
+      }
+    );
+
+    const [, init] = getFetchCall(fetcher);
+    const body = JSON.parse(String(init.body));
+    expect(body.stream).toBe(true);
+    expect(result.latencyMs).toBe(1_200);
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("8");
+  });
+
+  it("parses Responses stream events with multi-line data fields", async () => {
+    const fetcher = vi.fn(async () =>
+      textStreamResponse([
+        'data: {"type":"response.output_text.delta",\n',
+        'data: "delta":"8"}\n\n',
+      ])
+    );
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        model: "gpt-5.5",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("8");
+  });
+
+  it("returns a clear failure for malformed Responses stream events", async () => {
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        model: "gpt-5.5",
+      },
+      {
+        challenge,
+        fetcher: async () => textStreamResponse(["data: {not-json}\n\n"]),
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("Malformed Responses stream event");
   });
 
   it("uses OpenAI-compatible formatting for non-Google Gemini endpoints", async () => {

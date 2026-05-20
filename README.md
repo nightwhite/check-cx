@@ -90,13 +90,20 @@ pnpm dev
 ## 运行与部署
 
 ```bash
-pnpm dev    # 本地开发
+pnpm dev    # 本地 Workers 开发，默认读取 .env
 pnpm build  # 生产构建
-pnpm start  # 生产运行
+pnpm start  # 本地 Workers 预览，默认读取 .env
 pnpm lint   # 代码检查
 ```
 
-部署时，请将 `.env.local` 中的变量注入到目标平台，例如 Vercel、容器环境或自建服务器。
+Workers 版本本地开发使用仓库根目录的 `.env`：
+
+```bash
+cp .env.example .env
+pnpm dev
+```
+
+部署到 Cloudflare Workers 时，secret 变量使用 `wrangler secret put` 注入；非 secret 变量可以写入 `wrangler.jsonc` 的 `vars`。
 
 ## 配置说明
 
@@ -131,6 +138,9 @@ pnpm lint   # 代码检查
 - `GET /api/dashboard?trendPeriod=7d|15d|30d`：Dashboard 聚合数据（带 ETag）。返回完整时间线与可用性统计。
 - `GET /api/group/[groupName]?trendPeriod=7d|15d|30d`：分组详情数据。
 - `GET /api/v1/status?group=...&model=...`：对外只读状态 API。
+- `GET /api/public/status`：对外公开状态汇总 API。
+- `GET /api/public/status-card.png?period=7d|15d|30d`：状态页截图 PNG，可用于其他站点嵌入。
+- `/api/admin/*`：Workers 内置管理台 API，使用 `ADMIN_TOKEN` 登录 session 保护。
 
 更详细的接口定义与数据结构说明请参见下列文档。
 
@@ -138,6 +148,7 @@ pnpm lint   # 代码检查
 
 - 架构说明：`docs/ARCHITECTURE.md`
 - 运维手册：`docs/OPERATIONS.md`
+- Workers 管理台：`docs/ADMIN.md`
 - Provider 扩展：`docs/EXTENDING_PROVIDERS.md`
 
 ## 许可证
