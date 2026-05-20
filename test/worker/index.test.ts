@@ -72,6 +72,17 @@ describe("worker fetch handler", () => {
     await expect(response.text()).resolves.toBe("asset:/admin/index.html");
   });
 
+  it("redirects the legacy SU8 group route to the canonical status page", async () => {
+    const request = new Request(
+      "http://example.com/group/SU8"
+    ) as unknown as Parameters<typeof worker.fetch>[0];
+
+    const response = await worker.fetch(request, createEnv(), executionContext);
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("Location")).toBe("http://example.com/");
+  });
+
   it("does not replace intentional API 404 responses with static assets", async () => {
     const request = new Request(
       "http://example.com/api/group/missing?trendPeriod=7d"

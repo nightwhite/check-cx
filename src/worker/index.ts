@@ -25,8 +25,15 @@ function adminShellRequest(request: Request): Request {
 
 export default {
   async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname === "/group/SU8" || url.pathname === "/group/SU8/") {
+      url.pathname = "/";
+      url.search = "";
+      return Response.redirect(url.toString(), 307);
+    }
+
     const response = await app.fetch(request, env, ctx);
-    const pathname = new URL(request.url).pathname;
+    const pathname = url.pathname;
     if (response.status !== 404 || pathname.startsWith("/api/")) {
       return response;
     }
