@@ -18,7 +18,7 @@ const baseData: DashboardData = {
       id: "core-1",
       latest: {
         id: "core-1",
-        name: "OpenAI",
+        name: "SU8 gpt-5.5",
         type: "openai",
         endpoint: "https://api.openai.com/v1/chat/completions",
         model: "gpt-4o-mini",
@@ -38,7 +38,7 @@ const baseData: DashboardData = {
       items: [
         {
           id: "core-1",
-          name: "OpenAI",
+          name: "SU8 gpt-5.5",
           type: "openai",
           endpoint: "https://api.openai.com/v1/chat/completions",
           model: "gpt-4o-mini",
@@ -51,7 +51,7 @@ const baseData: DashboardData = {
         },
         {
           id: "core-1",
-          name: "OpenAI",
+          name: "SU8 gpt-5.5",
           type: "openai",
           endpoint: "https://api.openai.com/v1/chat/completions",
           model: "gpt-4o-mini",
@@ -133,7 +133,7 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByRole("heading", { name: "OpenAI" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "gpt-5.5" })).not.toBeNull();
 
     await act(async () => {
       vi.advanceTimersByTime(1_000);
@@ -202,6 +202,40 @@ describe("DashboardIsland", () => {
     expect(screen.getByText("Fresh")).not.toBeNull();
   });
 
+  it("reloads dashboard from the toolbar refresh button", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(baseData))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...baseData,
+          providerTimelines: [
+            {
+              ...baseData.providerTimelines[0],
+              latest: {
+                ...baseData.providerTimelines[0].latest,
+                name: "SU8 gpt-4o",
+              },
+            },
+          ],
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: "gpt-4o" })).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("uses SU8 as the public site identity instead of the database group name", async () => {
     window.history.replaceState({}, "", "/group/OpenAI");
     vi.stubGlobal(
@@ -218,6 +252,8 @@ describe("DashboardIsland", () => {
     expect(screen.getByDisplayValue("OpenAI")).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "Check CX" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "SU8", level: 2 })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "SU8 gpt-5.5" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "gpt-5.5" })).not.toBeNull();
   });
 
   it("filters group deep links by provider family rather than database group name", async () => {
@@ -276,6 +312,7 @@ describe("DashboardIsland", () => {
     expect(screen.getByText("https://www.su8.codes")).not.toBeNull();
     expect(screen.queryByText("prod")).toBeNull();
     expect(screen.queryByText("su8")).toBeNull();
+    expect(screen.queryByText("1 个配置")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "7 天" }));
     await act(async () => {
       await Promise.resolve();

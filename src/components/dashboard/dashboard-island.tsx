@@ -66,6 +66,10 @@ function getProviderFamily(type: string) {
   return PROVIDER_LABEL[type] ?? type;
 }
 
+function getProviderDisplayName(name: string) {
+  return name.replace(/^SU8\s+/i, "");
+}
+
 function formatLatency(value: number | null | undefined) {
   return typeof value === "number" ? `${Math.round(value)} ms` : "—";
 }
@@ -202,35 +206,6 @@ function getAvailabilityColor(pct: number | null | undefined) {
   return "text-rose-600 dark:text-rose-300";
 }
 
-function SummaryPill({
-  status,
-  count,
-}: {
-  status: string;
-  count: number;
-}) {
-  if (count === 0) {
-    return null;
-  }
-
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
-        STATUS_PILL_CLASS[status] ?? "border-border bg-muted text-muted-foreground"
-      )}
-    >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          STATUS_DOT_CLASS[status] ?? "bg-muted-foreground"
-        )}
-      />
-      {count} {STATUS_LABEL[status] ?? status}
-    </span>
-  );
-}
-
 function CornerPlus({ className }: { className?: string }) {
   return (
     <svg
@@ -347,7 +322,7 @@ function ProviderRow({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-3">
               <h2 className="line-clamp-2 text-2xl font-extrabold leading-tight tracking-normal">
-                {latest.name}
+                {getProviderDisplayName(latest.name)}
               </h2>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-muted/55 shadow-sm ring-1 ring-border/65 transition-transform group-hover:scale-105">
@@ -556,13 +531,6 @@ export function DashboardIsland() {
       .sort((left, right) => left.latest.name.localeCompare(right.latest.name));
   }, [activeProviderFamily, data, query]);
   const siteInfo = useMemo(() => getSiteInfo(data), [data]);
-  const summary = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const timeline of timelines) {
-      counts.set(timeline.latest.status, (counts.get(timeline.latest.status) ?? 0) + 1);
-    }
-    return counts;
-  }, [timelines]);
   const overallStatus = getOverallStatus(timelines);
   const overallLabel =
     overallStatus === "unknown" ? "暂无数据" : STATUS_LABEL[overallStatus] ?? overallStatus;
@@ -629,24 +597,7 @@ export function DashboardIsland() {
               更新于 {formatTime(data?.lastUpdated)}
               {countdown ? ` · 下次检查 ${countdown}` : ""}
             </div>
-            <button
-              type="button"
-              onClick={() => loadDashboard()}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-full border border-border bg-background px-3 text-xs font-semibold transition hover:border-foreground/40"
-            >
-              <RefreshCcw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-              刷新
-            </button>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {["operational", "degraded", "failed", "validation_failed", "maintenance", "error"].map((status) => (
-            <SummaryPill key={status} status={status} count={summary.get(status) ?? 0} />
-          ))}
-          <span className="rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground">
-            {timelines.length} 个配置
-          </span>
         </div>
       </header>
 
@@ -679,6 +630,14 @@ export function DashboardIsland() {
           ))}
         </select>
         <PeriodSwitch period={period} setPeriod={setPeriod} />
+        <button
+          type="button"
+          onClick={() => loadDashboard()}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-semibold transition hover:border-foreground/40"
+        >
+          <RefreshCcw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+          刷新
+        </button>
       </div>
 
       {errorMessage && (
