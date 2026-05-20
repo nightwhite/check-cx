@@ -34,8 +34,8 @@ class D1StatementForSqlite {
   }
 
   async run() {
-    this.statement.run(...this.values);
-    return { meta: { changes: 1 } };
+    const result = this.statement.run(...this.values) as { changes?: number } | undefined;
+    return { meta: { changes: result?.changes ?? 0 } };
   }
 }
 
@@ -91,6 +91,7 @@ describe("admin repositories", () => {
 
     await expect(repository.delete("template-1")).resolves.toBe(true);
     await expect(repository.list()).resolves.toEqual([]);
+    await expect(repository.delete("missing-template")).resolves.toBe(false);
   });
 
   it("creates, lists, updates, and deletes models", async () => {
@@ -140,6 +141,7 @@ describe("admin repositories", () => {
 
     await expect(models.delete("model-1")).resolves.toBe(true);
     await expect(models.list()).resolves.toEqual([]);
+    await expect(models.delete("missing-model")).resolves.toBe(false);
   });
 
   it("creates, lists, updates, deletes configs, and never returns secrets", async () => {
@@ -212,6 +214,7 @@ describe("admin repositories", () => {
 
     await expect(configs.delete("config-1")).resolves.toBe(true);
     await expect(configs.list()).resolves.toEqual([]);
+    await expect(configs.delete("missing-config")).resolves.toBe(false);
   });
 
   it("creates, lists, updates, and deletes groups", async () => {
@@ -242,6 +245,7 @@ describe("admin repositories", () => {
     ]);
     await expect(groups.delete("group-1")).resolves.toBe(true);
     await expect(groups.list()).resolves.toEqual([]);
+    await expect(groups.delete("missing-group")).resolves.toBe(false);
   });
 
   it("creates, lists, updates, and deletes notifications", async () => {
@@ -270,6 +274,7 @@ describe("admin repositories", () => {
     ]);
     await expect(notifications.delete("notification-1")).resolves.toBe(true);
     await expect(notifications.list()).resolves.toEqual([]);
+    await expect(notifications.delete("missing-notification")).resolves.toBe(false);
   });
 
   it("reads runtime status from jobs, locks, snapshots, and latest checks", async () => {

@@ -58,7 +58,7 @@ export function createAdminNotificationRepository(db: AdminD1Executor) {
     },
 
     async update(id: string, input: UpdateAdminNotificationInput) {
-      await db
+      const result = await db
         .prepare(
           `UPDATE system_notifications
            SET message = ?, is_active = ?, level = ?
@@ -66,6 +66,7 @@ export function createAdminNotificationRepository(db: AdminD1Executor) {
         )
         .bind(input.message, input.isActive, input.level, id)
         .run();
+      return changed(result);
     },
 
     async delete(id: string) {

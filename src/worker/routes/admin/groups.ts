@@ -2,7 +2,12 @@ import { Hono } from "hono";
 
 import { createAdminGroupRepository } from "../../db/repositories/admin";
 import { nowMs, routeError } from "./helpers";
-import { optionalString, readJsonObject, requiredString } from "./validation";
+import {
+  AdminNotFoundError,
+  optionalString,
+  readJsonObject,
+  requiredString,
+} from "./validation";
 
 function groupPayload(body: Record<string, unknown>, now = nowMs()) {
   return {
@@ -32,10 +37,13 @@ export const adminGroupRoutes = new Hono<{ Bindings: Env }>()
   .patch("/:id", async (c) => {
     try {
       const repository = createAdminGroupRepository(c.env.DB);
-      await repository.update(
+      const updated = await repository.update(
         c.req.param("id"),
         groupPayload(await readJsonObject(c.req.raw))
       );
+      if (!updated) {
+        throw new AdminNotFoundError("分组不存在");
+      }
       const record = (await repository.list()).find(
         (item) => item.id === c.req.param("id")
       );
@@ -45,6 +53,15 @@ export const adminGroupRoutes = new Hono<{ Bindings: Env }>()
     }
   })
   .delete("/:id", async (c) => {
-    await createAdminGroupRepository(c.env.DB).delete(c.req.param("id"));
-    return c.json({ ok: true });
+    try {
+      const deleted = await createAdminGroupRepository(c.env.DB).delete(
+        c.req.param("id")
+      );
+      if (!deleted) {
+        throw new AdminNotFoundError("分组不存在");
+      }
+      return c.json({ ok: true });
+    } catch (error) {
+      return routeError(c, error);
+    }
   });

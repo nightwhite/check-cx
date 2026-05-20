@@ -65,7 +65,7 @@ export function createAdminTemplateRepository(db: AdminD1Executor) {
     },
 
     async update(id: string, input: UpdateAdminTemplateInput) {
-      await db
+      const result = await db
         .prepare(
           `UPDATE check_request_templates
            SET name = ?, type = ?, request_header_json = ?, metadata_json = ?, updated_at_ms = ?
@@ -80,6 +80,7 @@ export function createAdminTemplateRepository(db: AdminD1Executor) {
           id
         )
         .run();
+      return changed(result);
     },
 
     async delete(id: string) {

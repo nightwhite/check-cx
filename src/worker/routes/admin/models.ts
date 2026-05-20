@@ -75,6 +75,15 @@ export const adminModelRoutes = new Hono<{ Bindings: Env }>()
     }
   })
   .delete("/:id", async (c) => {
-    await createAdminModelRepository(c.env.DB).delete(c.req.param("id"));
-    return c.json({ ok: true });
+    try {
+      const deleted = await createAdminModelRepository(c.env.DB).delete(
+        c.req.param("id")
+      );
+      if (!deleted) {
+        throw new AdminNotFoundError("模型不存在");
+      }
+      return c.json({ ok: true });
+    } catch (error) {
+      return routeError(c, error);
+    }
   });

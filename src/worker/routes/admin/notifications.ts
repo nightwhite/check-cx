@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { createAdminNotificationRepository } from "../../db/repositories/admin";
 import { nowMs, routeError } from "./helpers";
 import {
+  AdminNotFoundError,
   notificationLevel,
   optionalBoolean,
   readJsonObject,
@@ -39,10 +40,13 @@ export const adminNotificationRoutes = new Hono<{ Bindings: Env }>()
   .patch("/:id", async (c) => {
     try {
       const repository = createAdminNotificationRepository(c.env.DB);
-      await repository.update(
+      const updated = await repository.update(
         c.req.param("id"),
         notificationPayload(await readJsonObject(c.req.raw))
       );
+      if (!updated) {
+        throw new AdminNotFoundError("通知不存在");
+      }
       const record = (await repository.list()).find(
         (item) => item.id === c.req.param("id")
       );
@@ -52,6 +56,15 @@ export const adminNotificationRoutes = new Hono<{ Bindings: Env }>()
     }
   })
   .delete("/:id", async (c) => {
-    await createAdminNotificationRepository(c.env.DB).delete(c.req.param("id"));
-    return c.json({ ok: true });
+    try {
+      const deleted = await createAdminNotificationRepository(c.env.DB).delete(
+        c.req.param("id")
+      );
+      if (!deleted) {
+        throw new AdminNotFoundError("通知不存在");
+      }
+      return c.json({ ok: true });
+    } catch (error) {
+      return routeError(c, error);
+    }
   });

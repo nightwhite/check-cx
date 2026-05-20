@@ -59,7 +59,7 @@ export function createAdminGroupRepository(db: AdminD1Executor) {
     },
 
     async update(id: string, input: UpdateAdminGroupInput) {
-      await db
+      const result = await db
         .prepare(
           `UPDATE group_info
            SET group_name = ?, website_url = ?, tags = ?, updated_at_ms = ?
@@ -67,6 +67,7 @@ export function createAdminGroupRepository(db: AdminD1Executor) {
         )
         .bind(input.groupName, input.websiteUrl, input.tags, input.nowMs, id)
         .run();
+      return changed(result);
     },
 
     async delete(id: string) {

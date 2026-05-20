@@ -362,6 +362,61 @@ describe("admin management routes", () => {
     await expect(deletion.json()).resolves.toEqual({ error: "配置不存在" });
   });
 
+  it("returns 404 when updating or deleting missing admin resources", async () => {
+    const app = createWorkerApp();
+    const env = await createEnv();
+    const cookie = await loginCookie(app, env);
+
+    const cases = [
+      {
+        path: "templates",
+        body: {
+          name: "Missing template",
+          type: "openai",
+          requestHeader: null,
+          metadata: null,
+        },
+        error: "请求模板不存在",
+      },
+      {
+        path: "groups",
+        body: {
+          groupName: "missing-group",
+          websiteUrl: null,
+          tags: "",
+        },
+        error: "分组不存在",
+      },
+      {
+        path: "notifications",
+        body: {
+          message: "Missing notification",
+          level: "info",
+          isActive: true,
+        },
+        error: "通知不存在",
+      },
+    ];
+
+    for (const item of cases) {
+      const update = await app.request(
+        `http://example.com/api/admin/${item.path}/missing-id`,
+        jsonRequest("PATCH", cookie, item.body),
+        env
+      );
+      expect(update.status).toBe(404);
+      await expect(update.json()).resolves.toEqual({ error: item.error });
+
+      const deletion = await app.request(
+        `http://example.com/api/admin/${item.path}/missing-id`,
+        { method: "DELETE", headers: { Cookie: cookie } },
+        env
+      );
+      expect(deletion.status).toBe(404);
+      await expect(deletion.json()).resolves.toEqual({ error: item.error });
+    }
+  });
+
   it("returns summary and runtime status for authenticated admins", async () => {
     const app = createWorkerApp();
     const env = await createEnv();

@@ -33,7 +33,7 @@ Check CX 提供两个公开只读接口，供其他站点展示当前 AI provide
       "name": "OpenAI GPT-4o",
       "type": "openai",
       "model": "gpt-4o",
-      "group": "core",
+      "group": "OpenAI",
       "status": "operational",
       "latencyMs": 320,
       "checkedAt": "2026-05-20T00:00:00.000Z",
