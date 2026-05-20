@@ -583,7 +583,7 @@ git commit -m "feat(admin): add login and console shell"
 - 创建/修改：`components/ui/select.tsx`
 - 测试：`test/components/admin/*.test.tsx`
 
-- [ ] **步骤 6.1：编写组件状态测试**
+- [x] **步骤 6.1：编写组件状态测试**
 
 覆盖：
 
@@ -596,7 +596,7 @@ empty table state renders create action
 form validation errors are visible
 ```
 
-- [ ] **步骤 6.2：实现 CRUD views**
+- [x] **步骤 6.2：实现 CRUD views**
 
 每个 view 使用同一套交互模型：
 
@@ -610,7 +610,7 @@ form validation errors are visible
 失败时展示服务端错误
 ```
 
-- [ ] **步骤 6.3：实现 key 替换体验**
+- [x] **步骤 6.3：实现 key 替换体验**
 
 Provider 配置表格显示：
 
@@ -621,7 +621,7 @@ hasApiKey=false -> 未配置
 
 替换 key dialog 只包含新 key 输入框和确认按钮，不显示旧 key。
 
-- [ ] **步骤 6.4：实现运行状态 view**
+- [x] **步骤 6.4：实现运行状态 view**
 
 展示：
 
@@ -635,7 +635,7 @@ Cron: 每 1 分钟
 
 不提供编辑 Cron 的输入框或按钮。
 
-- [ ] **步骤 6.5：验证**
+- [x] **步骤 6.5：验证**
 
 运行：
 

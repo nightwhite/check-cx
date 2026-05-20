@@ -1,7 +1,12 @@
-import { Badge } from "../../../components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import type { AdminSummary, AdminView } from "./admin-types";
 import { AdminNav } from "./admin-nav";
+import { ConfigsView } from "./configs-view";
+import { GroupsView } from "./groups-view";
+import { ModelsView } from "./models-view";
+import { NotificationsView } from "./notifications-view";
+import { OverviewView } from "./overview-view";
+import { RuntimeView } from "./runtime-view";
+import { TemplatesView } from "./templates-view";
 
 interface AdminShellProps {
   activeView: AdminView;
@@ -36,66 +41,27 @@ export function AdminShell({
           </div>
           <AdminNav activeView={activeView} onChange={onViewChange} />
         </aside>
-        <section className="grid gap-4">
-          <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
-            <div>
-              <h1 className="text-xl font-semibold tracking-normal">概览</h1>
-              <p className="text-sm text-muted-foreground">配置与运行入口</p>
-            </div>
-            <Badge variant={data.recentErrorCount > 0 ? "danger" : "success"}>
-              {data.recentErrorCount > 0 ? "有异常" : "稳定"}
-            </Badge>
-          </header>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Provider 配置" value={data.configCount} />
-            <MetricCard label="启用配置" value={data.enabledConfigCount} />
-            <MetricCard label="维护中" value={data.maintenanceConfigCount} />
-            <MetricCard label="模型" value={data.modelCount} />
-          </div>
-
-          <Card className="rounded-lg">
-            <CardHeader>
-              <CardTitle className="text-base">当前视图</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                {viewLabel(activeView)}
-              </p>
-            </CardContent>
-          </Card>
-        </section>
+        <div>{renderView(activeView, data)}</div>
       </div>
     </main>
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: number }) {
-  return (
-    <Card className="rounded-lg" aria-label={`${label}: ${value}`}>
-      <CardContent className="p-4">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="mt-2 text-2xl font-semibold tracking-normal">{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function viewLabel(view: AdminView): string {
+function renderView(view: AdminView, summary: AdminSummary) {
   switch (view) {
     case "overview":
-      return "概览";
+      return <OverviewView summary={summary} />;
     case "configs":
-      return "Provider 配置";
+      return <ConfigsView />;
     case "models":
-      return "模型";
+      return <ModelsView />;
     case "templates":
-      return "请求模板";
+      return <TemplatesView />;
     case "groups":
-      return "分组";
+      return <GroupsView />;
     case "notifications":
-      return "通知";
+      return <NotificationsView />;
     case "runtime":
-      return "运行状态";
+      return <RuntimeView />;
   }
 }
