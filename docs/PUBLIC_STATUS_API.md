@@ -46,21 +46,23 @@ Check CX 提供两个公开只读接口，供其他站点展示当前 AI provide
 }
 ```
 
-## 状态卡片 SVG
+## 状态页截图 PNG
 
 - **Method:** `GET`
-- **Path:** `/api/public/status-card.svg`
+- **Path:** `/api/public/status-card.png`
 - **Query:** `period=7d|15d|30d`，默认 `7d`
-- **Response:** `image/svg+xml; charset=utf-8`
+- **Response:** `image/png`
 - **Cache:** `ETag`、`Cache-Control`、`CDN-Cache-Control`
 - **CORS:** `Access-Control-Allow-Origin: *`
+
+该接口通过 Cloudflare Browser Rendering 打开当前站点首页，并在 Dashboard 数据加载完成后截取整页 PNG。它不是手写 SVG 卡片，也不支持截取任意外部 URL。
 
 ### 嵌入示例
 
 ```html
 <img
-  src="https://check-cx.example.com/api/public/status-card.svg?period=7d"
-  alt="Check CX status"
+  src="https://check-cx.example.com/api/public/status-card.png?period=7d"
+  alt="SU8.Codes status"
 />
 ```
 

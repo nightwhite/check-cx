@@ -157,6 +157,24 @@ function getInitialProviderFamily() {
   }
 }
 
+function getInitialPeriod(): AvailabilityPeriod {
+  if (typeof window === "undefined") {
+    return "30d";
+  }
+
+  const period = new URLSearchParams(window.location.search).get("period");
+  return PERIODS.some((item) => item.value === period)
+    ? (period as AvailabilityPeriod)
+    : "30d";
+}
+
+function isScreenshotMode() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return new URLSearchParams(window.location.search).get("screenshot") === "1";
+}
+
 function getLatestCheckTimestamp(timelines: ProviderTimeline[]) {
   const timestamps = timelines
     .map((timeline) => new Date(timeline.latest.checkedAt).getTime())
@@ -545,7 +563,7 @@ function LoadingState() {
 
 export function DashboardIsland() {
   const [data, setData] = useState<DashboardData | null>(null);
-  const [period, setPeriod] = useState<AvailabilityPeriod>("30d");
+  const [period, setPeriod] = useState<AvailabilityPeriod>(getInitialPeriod);
   const [query, setQuery] = useState("");
   const [providerFamily, setProviderFamily] = useState(getInitialProviderFamily);
   const [isLoading, setIsLoading] = useState(true);
@@ -562,7 +580,13 @@ export function DashboardIsland() {
     abortControllerRef.current = controller;
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/dashboard?trendPeriod=${period}`, {
+      const screenshotMode = isScreenshotMode();
+      const searchParams = new URLSearchParams({ trendPeriod: period });
+      if (screenshotMode) {
+        searchParams.set("screenshot", "1");
+      }
+      const response = await fetch(`/api/dashboard?${searchParams.toString()}`, {
+        cache: screenshotMode ? "no-store" : "default",
         headers: { Accept: "application/json" },
         signal: controller.signal,
       });
@@ -658,7 +682,10 @@ export function DashboardIsland() {
   const countdown = formatCountdown(timeToNextRefresh);
 
   return (
-    <section className="relative mx-auto flex w-full max-w-7xl flex-col gap-7">
+    <section
+      className="relative mx-auto flex w-full max-w-7xl flex-col gap-7"
+      data-dashboard-ready={!isLoading && !errorMessage ? "true" : "false"}
+    >
       <CornerPlus className="fixed left-4 top-4 hidden h-6 w-6 text-border md:block" />
       <CornerPlus className="fixed right-4 top-4 hidden h-6 w-6 text-border md:block" />
       <CornerPlus className="fixed bottom-4 left-4 hidden h-6 w-6 text-border md:block" />

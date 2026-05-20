@@ -1,6 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createWorkerApp } from "../../../src/worker/app";
+
+const pngHeader = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+
+const browserState = vi.hoisted(() => ({
+  launch: vi.fn(),
+  calls: {
+    goto: "",
+    selector: "",
+    screenshot: null as Record<string, unknown> | null,
+    closed: false,
+  },
+}));
+
+vi.mock("@cloudflare/puppeteer", () => ({
+  launch: browserState.launch,
+}));
 
 interface SnapshotRow {
   payload_json: string;
@@ -42,9 +58,40 @@ class FakeD1 {
 }
 
 function createEnv(db: FakeD1) {
+  browserState.calls = {
+    goto: "",
+    selector: "",
+    screenshot: null,
+    closed: false,
+  };
+  browserState.launch.mockResolvedValue({
+    async newPage() {
+      return {
+        async setViewport() {},
+        async emulateMediaType() {},
+        async setCacheEnabled() {},
+        async setExtraHTTPHeaders() {},
+        async goto(url: string) {
+          browserState.calls.goto = url;
+        },
+        async waitForSelector(selector: string) {
+          browserState.calls.selector = selector;
+        },
+        async screenshot(options: Record<string, unknown>) {
+          browserState.calls.screenshot = options;
+          return pngHeader;
+        },
+      };
+    },
+    async close() {
+      browserState.calls.closed = true;
+    },
+  });
+
   return {
     DB: db,
     ASSETS: { fetch: async () => new Response("asset") },
+    BROWSER: { fetch: async () => new Response(null) },
   } as unknown as Env;
 }
 
@@ -244,37 +291,44 @@ describe("public status routes", () => {
     });
   });
 
-  it("serves an embeddable SVG status card", async () => {
+  it("serves a PNG screenshot rendered from the public status page", async () => {
     const app = createWorkerApp();
-
-    const response = await app.request(
-      "http://example.com/api/public/status-card.svg?period=7d",
-      {},
-      createEnv(
-        createDb({
-          payload_json: JSON.stringify(createSnapshotPayload()),
-          etag: "\"dashboard-etag\"",
-          generated_at_ms: 1_779_235_260_000,
-        })
-      )
+    const env = createEnv(
+      createDb({
+        payload_json: JSON.stringify(createSnapshotPayload()),
+        etag: "\"dashboard-etag\"",
+        generated_at_ms: 1_779_235_260_000,
+      })
     );
 
-    const svg = await response.text();
+    const response = await app.request(
+      "http://example.com/api/public/status-card.png?period=7d",
+      {},
+      env
+    );
+
+    const body = new Uint8Array(await response.arrayBuffer());
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe(
-      "image/svg+xml; charset=utf-8"
+      "image/png"
     );
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
     expect(response.headers.get("ETag")).toMatch(/^".+"$/);
-    expect(svg).toContain("<svg");
-    expect(svg).toContain("SU8 Status");
-    expect(svg).toContain("Degraded");
-    expect(svg).toContain("OpenAI GPT-4o");
-    expect(svg).not.toContain("https://api.openai.com");
+    expect(Array.from(body)).toEqual(Array.from(pngHeader));
+    expect(browserState.calls.goto).toBe(
+      "http://example.com/?period=7d&screenshot=1"
+    );
+    expect(browserState.calls.selector).toBe("[data-dashboard-ready='true']");
+    expect(browserState.calls.screenshot).toEqual({
+      type: "png",
+      fullPage: true,
+      captureBeyondViewport: true,
+    });
+    expect(browserState.calls.closed).toBe(true);
   });
 
-  it("returns 304 for matching SVG card ETag", async () => {
+  it("returns 304 for matching PNG screenshot ETag", async () => {
     const app = createWorkerApp();
     const env = createEnv(
       createDb({
@@ -284,14 +338,14 @@ describe("public status routes", () => {
       })
     );
     const initial = await app.request(
-      "http://example.com/api/public/status-card.svg?period=7d",
+      "http://example.com/api/public/status-card.png?period=7d",
       {},
       env
     );
     const etag = initial.headers.get("ETag") ?? "";
 
     const response = await app.request(
-      "http://example.com/api/public/status-card.svg?period=7d",
+      "http://example.com/api/public/status-card.png?period=7d",
       { headers: { "If-None-Match": etag } },
       env
     );

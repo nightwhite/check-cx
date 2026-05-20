@@ -4,7 +4,7 @@ import {
   buildPublicStatusPayload,
   type DashboardSnapshotPayload,
 } from "./public-status";
-import { renderPublicStatusCardSvg } from "./public-status-card";
+import { renderPublicStatusScreenshotPng } from "./public-status-screenshot";
 import { parseTrendPeriod, VALID_TREND_PERIODS } from "./trend-period";
 
 interface SnapshotRow {
@@ -60,10 +60,11 @@ function invalidPeriodResponse() {
 
 function cachedResponse(
   request: Request,
-  body: string,
+  body: BodyInit | Uint8Array,
+  etagSource: string,
   contentType: string
 ): Response {
-  const etag = generateETag(body);
+  const etag = generateETag(etagSource);
   if (request.headers.get("If-None-Match") === etag) {
     return new Response(null, {
       status: 304,
@@ -74,7 +75,8 @@ function cachedResponse(
     });
   }
 
-  return new Response(body, {
+  const responseBody = body instanceof Uint8Array ? toArrayBuffer(body) : body;
+  return new Response(responseBody, {
     status: 200,
     headers: {
       "Content-Type": contentType,
@@ -82,6 +84,10 @@ function cachedResponse(
       ...CACHE_HEADERS,
     },
   });
+}
+
+function toArrayBuffer(value: Uint8Array): ArrayBuffer {
+  return value.slice().buffer as ArrayBuffer;
 }
 
 export const publicRoutes = new Hono<{ Bindings: Env }>()
@@ -96,20 +102,41 @@ export const publicRoutes = new Hono<{ Bindings: Env }>()
     return cachedResponse(
       c.req.raw,
       JSON.stringify(payload),
+      JSON.stringify(payload),
       "application/json; charset=utf-8"
     );
   })
-  .get("/status-card.svg", async (c) => {
+  .get("/status-card.png", async (c) => {
     const period = parseTrendPeriod(c.req.query("period") ?? null);
     if (!period) {
       return invalidPeriodResponse();
     }
 
     const snapshot = await loadDashboardSnapshot(c.env, period);
-    const payload = buildPublicStatusPayload(snapshot, period);
+    const etagSource = JSON.stringify({
+      period,
+      generatedAt: snapshot?.generatedAt ?? snapshot?.lastUpdated ?? null,
+    });
+    const etag = generateETag(etagSource);
+    if (c.req.header("If-None-Match") === etag) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          ETag: etag,
+          ...CACHE_HEADERS,
+        },
+      });
+    }
+
+    const image = await renderPublicStatusScreenshotPng(
+      c.env.BROWSER,
+      c.req.raw,
+      period
+    );
     return cachedResponse(
       c.req.raw,
-      renderPublicStatusCardSvg(payload),
-      "image/svg+xml; charset=utf-8"
+      image,
+      etagSource,
+      "image/png"
     );
   });

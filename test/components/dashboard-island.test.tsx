@@ -147,6 +147,32 @@ describe("DashboardIsland", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("uses the URL period and marks the dashboard ready for screenshots", async () => {
+    window.history.replaceState({}, "", "/?period=7d&screenshot=1");
+    const fetchMock = vi.fn(async () => jsonResponse(baseData));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { container } = render(<DashboardIsland />);
+
+    expect(
+      container.querySelector("[data-dashboard-ready='false']")
+    ).not.toBeNull();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/dashboard?trendPeriod=7d&screenshot=1",
+      expect.objectContaining({
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      })
+    );
+    expect(
+      container.querySelector("[data-dashboard-ready='true']")
+    ).not.toBeNull();
+  });
+
   it("ignores stale responses from superseded requests", async () => {
     let resolveFirst: (response: Response) => void = () => undefined;
     const fetchMock = vi
