@@ -27,11 +27,11 @@
 - [x] 5.1 Add UI design brief section to the superpowers implementation plan.
 - [x] 5.2 Implement Astro admin shell and React admin island.
 - [x] 5.3 Implement login, overview, configs, models, templates, groups, notifications, and runtime views.
-- [ ] 5.4 Verify desktop and mobile layouts have no text overlap or horizontal overflow.
+- [x] 5.4 Verify desktop and mobile layouts have no text overlap or horizontal overflow.
 
 ## 6. Verification
 
-- [ ] 6.1 Run focused admin tests.
-- [ ] 6.2 Run `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm wrangler:types`, and `pnpm deploy:dry-run`.
-- [ ] 6.3 Document local test steps for `/admin`.
-- [ ] 6.4 Commit the verified implementation.
+- [x] 6.1 Run focused admin tests.
+- [x] 6.2 Run `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm wrangler:types`, and `pnpm deploy:dry-run`.
+- [x] 6.3 Document local test steps for `/admin`.
+- [x] 6.4 Commit the verified implementation.

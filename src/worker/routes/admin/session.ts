@@ -163,13 +163,19 @@ export async function hasValidAdminSession(c: AdminContext): Promise<boolean> {
     return false;
   }
 
-  const valid = await verifySignature(payload, signature, adminToken);
-  if (!valid) {
+  try {
+    const valid = await verifySignature(payload, signature, adminToken);
+    if (!valid) {
+      return false;
+    }
+
+    const session = decodeJson<AdminSessionPayload>(payload);
+    return (
+      Number.isFinite(session.expiresAtMs) && session.expiresAtMs > Date.now()
+    );
+  } catch {
     return false;
   }
-
-  const session = decodeJson<AdminSessionPayload>(payload);
-  return Number.isFinite(session.expiresAtMs) && session.expiresAtMs > Date.now();
 }
 
 export function isAdminConfigured(env: Env): boolean {

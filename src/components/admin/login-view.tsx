@@ -22,8 +22,8 @@ export function LoginView({
 
   if (unavailable) {
     return (
-      <main className="flex min-h-screen items-center justify-center px-4 py-10 text-foreground">
-        <Card className="w-full max-w-md rounded-lg">
+      <main className="flex min-h-screen min-w-0 items-center justify-center overflow-x-hidden px-4 py-10 text-foreground">
+        <Card className="min-w-0 w-full max-w-[calc(100vw-2rem)] rounded-lg sm:max-w-md">
           <CardHeader>
             <CardTitle>管理台未配置</CardTitle>
           </CardHeader>
@@ -38,8 +38,8 @@ export function LoginView({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10 text-foreground">
-      <Card className="w-full max-w-md rounded-lg">
+    <main className="flex min-h-screen min-w-0 items-center justify-center overflow-x-hidden px-4 py-10 text-foreground">
+      <Card className="min-w-0 w-full max-w-[calc(100vw-2rem)] rounded-lg sm:max-w-md">
         <CardHeader>
           <CardTitle>管理登录</CardTitle>
         </CardHeader>

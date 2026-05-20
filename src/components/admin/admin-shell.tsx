@@ -32,16 +32,16 @@ export function AdminShell({
 }: AdminShellProps) {
   const data = summary ?? emptySummary;
   return (
-    <main className="min-h-screen bg-background px-4 py-4 text-foreground sm:px-6 lg:px-8">
-      <div className="mx-auto grid w-full max-w-[1440px] gap-4 lg:grid-cols-[240px_1fr]">
-        <aside className="rounded-lg border bg-card p-3 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]">
+    <main className="min-h-screen overflow-x-hidden bg-background px-4 py-4 text-foreground sm:px-6 lg:px-8">
+      <div className="mx-auto grid w-full max-w-[1440px] min-w-0 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="min-w-0 rounded-lg border bg-card p-3 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]">
           <div className="mb-4 px-2">
             <p className="text-sm font-semibold">Check CX Admin</p>
             <p className="text-xs text-muted-foreground">配置控制台</p>
           </div>
           <AdminNav activeView={activeView} onChange={onViewChange} />
         </aside>
-        <div>{renderView(activeView, data)}</div>
+        <div className="min-w-0">{renderView(activeView, data)}</div>
       </div>
     </main>
   );

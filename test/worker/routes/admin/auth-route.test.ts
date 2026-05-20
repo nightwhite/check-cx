@@ -103,6 +103,19 @@ describe("admin auth routes", () => {
     });
   });
 
+  it("treats malformed session cookies as unauthenticated", async () => {
+    const app = createWorkerApp();
+
+    const response = await app.request(
+      "http://example.com/api/admin/summary",
+      { headers: { Cookie: "check_cx_admin_session=payload.@@@" } },
+      createEnv("secret-admin-token")
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: "unauthorized" });
+  });
+
   it("logs out by expiring the session cookie", async () => {
     const app = createWorkerApp();
 

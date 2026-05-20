@@ -32,7 +32,7 @@ interface AdminNavProps {
 
 export function AdminNav({ activeView, onChange }: AdminNavProps) {
   return (
-    <nav className="flex gap-1 overflow-x-auto lg:grid lg:overflow-visible">
+    <nav className="flex flex-wrap gap-1 lg:grid">
       {navItems.map((item) => {
         const Icon = item.icon;
         const active = activeView === item.value;

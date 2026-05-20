@@ -90,7 +90,7 @@
 - 创建：`openspec/changes/add-workers-admin-console/specs/admin-console/spec.md`
 - 创建：`docs/superpowers/plans/2026-05-20-workers-admin-console.md`
 
-- [ ] **步骤 0.1：确认 OpenSpec 当前状态**
+- [x] **步骤 0.1：确认 OpenSpec 当前状态**
 
 运行：
 
@@ -102,7 +102,7 @@ sed -n '1,260p' openspec/project.md
 
 预期：没有同名 `add-workers-admin-console` change。若 `openspec` CLI 不可用，记录实际错误并继续按 OpenSpec 目录格式创建文件。
 
-- [ ] **步骤 0.2：创建 OpenSpec change**
+- [x] **步骤 0.2：创建 OpenSpec change**
 
 `proposal.md` 必须包含：
 
@@ -124,7 +124,7 @@ sed -n '1,260p' openspec/project.md
 - Affected code: worker routes, D1 repositories, crypto, Astro pages, admin React components, tests
 ```
 
-- [ ] **步骤 0.3：创建 admin-console spec delta**
+- [x] **步骤 0.3：创建 admin-console spec delta**
 
 必须覆盖：
 
@@ -147,7 +147,7 @@ openspec validate add-workers-admin-console --strict
 
 预期：PASS。若 CLI 不可用，保留 `tasks.md` 中的未完成验证项，不声称 strict validate 已通过。
 
-- [ ] **步骤 0.5：Commit**
+- [x] **步骤 0.5：Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-05-20-workers-admin-console-design.md \
@@ -168,7 +168,7 @@ git commit -m "docs(admin): add workers admin console plan"
 - 修改：`src/worker/env.d.ts`
 - 测试：`test/worker/routes/admin/auth-route.test.ts`
 
-- [ ] **步骤 1.1：编写失败的 auth route tests**
+- [x] **步骤 1.1：编写失败的 auth route tests**
 
 测试必须覆盖：
 
@@ -180,7 +180,7 @@ it("returns the current session for a valid cookie", async () => {});
 it("logs out by expiring the session cookie", async () => {});
 ```
 
-- [ ] **步骤 1.2：运行测试确认失败**
+- [x] **步骤 1.2：运行测试确认失败**
 
 运行：
 
@@ -190,7 +190,7 @@ pnpm test -- test/worker/routes/admin/auth-route.test.ts
 
 预期：FAIL，原因是 `/api/admin/session` route 尚未注册。
 
-- [ ] **步骤 1.3：实现 session cookie**
+- [x] **步骤 1.3：实现 session cookie**
 
 实现要求：
 
@@ -210,7 +210,7 @@ payload: expiresAtMs and nonce
 ADMIN_TOKEN 缺失时自动放行
 ```
 
-- [ ] **步骤 1.4：注册 admin routes**
+- [x] **步骤 1.4：注册 admin routes**
 
 `src/worker/app.ts` 添加：
 
@@ -220,7 +220,7 @@ import { adminRoutes } from "./routes/admin";
 app.route("/api/admin", adminRoutes);
 ```
 
-- [ ] **步骤 1.5：验证**
+- [x] **步骤 1.5：验证**
 
 运行：
 
@@ -231,7 +231,7 @@ pnpm typecheck
 
 预期：auth route tests 与 typecheck 通过。
 
-- [ ] **步骤 1.6：Commit**
+- [x] **步骤 1.6：Commit**
 
 ```bash
 git add src/worker/routes/admin src/worker/app.ts src/worker/env.d.ts test/worker/routes/admin/auth-route.test.ts
@@ -254,7 +254,7 @@ git commit -m "feat(admin): add token session authentication"
 - 测试：`test/worker/db/admin/*.test.ts`
 - 测试：`test/worker/crypto/provider-key.test.ts`
 
-- [ ] **步骤 2.1：编写 provider key crypto 测试**
+- [x] **步骤 2.1：编写 provider key crypto 测试**
 
 测试必须覆盖：
 
@@ -264,7 +264,7 @@ it("uses a new nonce for each encryption", async () => {});
 it("rejects invalid CONFIG_ENCRYPTION_KEY length", async () => {});
 ```
 
-- [ ] **步骤 2.2：实现 `encryptProviderKey()`**
+- [x] **步骤 2.2：实现 `encryptProviderKey()`**
 
 目标签名：
 
@@ -277,7 +277,7 @@ export async function encryptProviderKey(
 
 实现必须使用 `crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, bytes)`，nonce 使用 12 字节随机值，输出 base64 字符串。
 
-- [ ] **步骤 2.3：编写 repository smoke tests**
+- [x] **步骤 2.3：编写 repository smoke tests**
 
 覆盖：
 
@@ -291,7 +291,7 @@ notification create/list/update/delete
 runtime status reads job_runs/job_locks/snapshots/latest
 ```
 
-- [ ] **步骤 2.4：实现 repositories**
+- [x] **步骤 2.4：实现 repositories**
 
 关键约束：
 
@@ -303,7 +303,7 @@ config list 返回 hasApiKey，不返回 ciphertext/nonce
 JSON 字段写入前 stringify，读取后 parse
 ```
 
-- [ ] **步骤 2.5：验证**
+- [x] **步骤 2.5：验证**
 
 运行：
 
@@ -314,7 +314,7 @@ pnpm typecheck
 
 预期：crypto 与 repository tests 通过。
 
-- [ ] **步骤 2.6：Commit**
+- [x] **步骤 2.6：Commit**
 
 ```bash
 git add src/worker/crypto/provider-key.ts src/worker/db/repositories/admin test/worker/crypto test/worker/db/admin
@@ -337,7 +337,7 @@ git commit -m "feat(admin): add d1 repositories and key encryption"
 - 修改：`src/worker/routes/admin/index.ts`
 - 测试：`test/worker/routes/admin/*.test.ts`
 
-- [ ] **步骤 3.1：编写 API contract tests**
+- [x] **步骤 3.1：编写 API contract tests**
 
 测试必须覆盖：
 
@@ -354,7 +354,7 @@ GET/POST/PATCH/DELETE /api/admin/notifications
 所有 GET API 不触发 provider checks
 ```
 
-- [ ] **步骤 3.2：运行测试确认失败**
+- [x] **步骤 3.2：运行测试确认失败**
 
 运行：
 
@@ -364,7 +364,7 @@ pnpm test -- test/worker/routes/admin
 
 预期：FAIL，原因是 CRUD routes 尚未实现。
 
-- [ ] **步骤 3.3：实现请求校验**
+- [x] **步骤 3.3：实现请求校验**
 
 校验规则：
 
@@ -377,11 +377,11 @@ model.template_id 存在时，template.type 必须等于 model.type
 config.model_id 存在时，model.type 必须等于 config.type
 ```
 
-- [ ] **步骤 3.4：实现 CRUD routes**
+- [x] **步骤 3.4：实现 CRUD routes**
 
 所有写操作返回更新后的脱敏记录。删除操作返回 `{ ok: true }`。引用冲突返回 `409`，校验失败返回 `400`。
 
-- [ ] **步骤 3.5：验证**
+- [x] **步骤 3.5：验证**
 
 运行：
 
@@ -392,7 +392,7 @@ pnpm typecheck
 
 预期：admin API contract tests 与 typecheck 通过。
 
-- [ ] **步骤 3.6：Commit**
+- [x] **步骤 3.6：Commit**
 
 ```bash
 git add src/worker/routes/admin test/worker/routes/admin
@@ -409,7 +409,7 @@ git commit -m "feat(admin): add management api routes"
 - 修改：`src/worker/env.d.ts`
 - 测试：`test/worker/index.test.ts`
 
-- [ ] **步骤 4.1：编写 Worker path tests**
+- [x] **步骤 4.1：编写 Worker path tests**
 
 测试必须覆盖：
 
@@ -420,7 +420,7 @@ it("serves admin shell for ADMIN_PATH when configured", async () => {});
 it("does not route /api/admin through assets", async () => {});
 ```
 
-- [ ] **步骤 4.2：实现 `src/pages/admin.astro`**
+- [x] **步骤 4.2：实现 `src/pages/admin.astro`**
 
 页面要求：
 
@@ -442,7 +442,7 @@ import "../styles/global.css";
 </html>
 ```
 
-- [ ] **步骤 4.3：实现 `ADMIN_PATH` 静态 shell 映射**
+- [x] **步骤 4.3：实现 `ADMIN_PATH` 静态 shell 映射**
 
 `src/worker/index.ts` 逻辑：
 
@@ -455,7 +455,7 @@ pathname 等于 ADMIN_PATH 或以 ADMIN_PATH + "/" 开头时，返回 /admin 静
 
 不得添加任何未确认的 fallback 路由。
 
-- [ ] **步骤 4.4：验证**
+- [x] **步骤 4.4：验证**
 
 运行：
 
@@ -466,7 +466,7 @@ pnpm build
 
 预期：Worker path tests 与 Astro build 通过。
 
-- [ ] **步骤 4.5：Commit**
+- [x] **步骤 4.5：Commit**
 
 ```bash
 git add src/pages/admin.astro src/worker/index.ts src/worker/env.d.ts test/worker/index.test.ts
@@ -489,7 +489,7 @@ git commit -m "feat(admin): add configurable admin shell"
 - 创建/修改：`components/ui/tabs.tsx`
 - 测试：`test/components/admin/admin-island.test.tsx`
 
-- [ ] **步骤 5.1：写 UI design brief**
+- [x] **步骤 5.1：写 UI design brief**
 
 brief 必须锁定：
 
@@ -510,7 +510,7 @@ brief 必须锁定：
 - 文案边界：页面只出现登录、导航、状态和操作反馈；不展示架构说明、技能说明、开发计划或 Cloudflare 实现细节。
 - 反目标：不要营销页，不做重型 SaaS admin，不添加批量操作入口，不展示 API key 明文或旧 key。
 
-- [ ] **步骤 5.2：编写 UI tests**
+- [x] **步骤 5.2：编写 UI tests**
 
 测试必须覆盖：
 
@@ -521,7 +521,7 @@ ADMIN_TOKEN 缺失时显示不可登录状态
 session 过期时回到登录态
 ```
 
-- [ ] **步骤 5.3：实现登录和 shell**
+- [x] **步骤 5.3：实现登录和 shell**
 
 导航项固定：
 
@@ -542,7 +542,7 @@ Provider 配置
 不把架构说明、实现计划、技能说明写入页面
 ```
 
-- [ ] **步骤 5.4：验证**
+- [x] **步骤 5.4：验证**
 
 运行：
 
@@ -553,7 +553,7 @@ pnpm build
 
 预期：admin island tests 与 build 通过。
 
-- [ ] **步骤 5.5：Commit**
+- [x] **步骤 5.5：Commit**
 
 ```bash
 git add src/components/admin components/ui test/components/admin
@@ -646,7 +646,7 @@ pnpm build
 
 预期：admin component tests 与 build 通过。
 
-- [ ] **步骤 6.6：Commit**
+- [x] **步骤 6.6：Commit**
 
 ```bash
 git add src/components/admin components/ui test/components/admin
@@ -663,7 +663,7 @@ git commit -m "feat(admin): add management console views"
 - 修改：`.env.example`
 - 修改：`wrangler.jsonc`（如需补充 vars 示例，只能写非 secret 配置）
 
-- [ ] **步骤 7.1：补充配置文档**
+- [x] **步骤 7.1：补充配置文档**
 
 `docs/ADMIN.md` 必须包含：
 
@@ -677,7 +677,7 @@ Cloudflare secret 设置命令
 Cron 每分钟且不可在 admin 修改
 ```
 
-- [ ] **步骤 7.2：补充示例配置**
+- [x] **步骤 7.2：补充示例配置**
 
 `.env.example` 只写占位值：
 
@@ -689,7 +689,7 @@ CONFIG_ENCRYPTION_KEY=replace-with-16-24-or-32-byte-key
 
 不得写真实 secret。
 
-- [ ] **步骤 7.3：运行完整验证**
+- [x] **步骤 7.3：运行完整验证**
 
 运行：
 
@@ -704,7 +704,7 @@ pnpm deploy:dry-run
 
 预期：全部通过。
 
-- [ ] **步骤 7.4：浏览器验证**
+- [x] **步骤 7.4：浏览器验证**
 
 启动：
 
@@ -725,7 +725,7 @@ mobile viewport 无横向溢出
 desktop viewport 无重叠
 ```
 
-- [ ] **步骤 7.5：代码审查**
+- [x] **步骤 7.5：代码审查**
 
 使用 `requesting-code-review` 审查：
 
@@ -737,7 +737,7 @@ Worker runtime 兼容性
 UI 文案边界
 ```
 
-- [ ] **步骤 7.6：Commit**
+- [x] **步骤 7.6：Commit**
 
 ```bash
 git add docs/ADMIN.md README.md .env.example wrangler.jsonc
@@ -757,3 +757,12 @@ git commit -m "docs(admin): document worker admin console"
 - Admin GET API 不触发 provider checks。
 - Cron 默认每分钟一次，Admin 只读展示运行状态。
 - `pnpm test`、`pnpm typecheck`、`pnpm lint`、`pnpm build`、`pnpm wrangler:types`、`pnpm deploy:dry-run` 通过。
+
+## 执行记录
+
+- OpenSpec CLI 当前不可用：`openspec` 返回 `command not found`，`pnpm exec openspec` 返回 `Command "openspec" not found`。因此步骤 0.4 保持未完成。
+- 已提交分阶段实现：`b174e73`、`517559f`、`797e67b`、`e7b7007`、`f6bd00c`、`f6f3382`、`9af9aee`。
+- 最新验证：`pnpm test` 通过 31 个测试文件、110 个测试；`pnpm typecheck`、`pnpm lint`、`pnpm build`、`pnpm wrangler:types`、`pnpm deploy:dry-run`、`wrangler d1 migrations apply DB --local` 均为 exit 0。
+- 浏览器验证使用 390px 移动视口检查 `/admin` 登录页和登录后的 shell：`scrollWidth=390`、`clientWidth=390`、offenders 为空；1440px 桌面视口 shell：`scrollWidth=1440`、`clientWidth=1440`、offenders 为空。
+- 代码审查后修复：畸形 admin session cookie 不再导致 500，统一按未授权处理。
+- 审查观察：当前 D1 schema 对 `check_models.template_id` 使用 `ON DELETE SET NULL`，因此删除模板时会解除模型引用，而不是按早期计划阻止删除。
