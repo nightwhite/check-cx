@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 
+import { adminRoutes } from "./routes/admin";
 import { dashboardRoutes } from "./routes/dashboard";
 import { groupRoutes } from "./routes/group";
 import { healthRoutes } from "./routes/health";
@@ -18,6 +19,7 @@ export function createWorkerApp() {
   app.route("/api/notifications", notificationRoutes);
   app.route("/api/internal", internalRoutes);
   app.route("/api/public", publicRoutes);
+  app.route("/api/admin", adminRoutes);
 
   return app;
 }

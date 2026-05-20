@@ -6,8 +6,8 @@
 
 ## 2. Admin Auth
 
-- [ ] 2.1 Add failing tests for `POST /api/admin/session`, `GET /api/admin/session`, and `POST /api/admin/logout`.
-- [ ] 2.2 Implement `ADMIN_TOKEN` validation and 30-day signed HttpOnly session cookie.
+- [x] 2.1 Add failing tests for `POST /api/admin/session`, `GET /api/admin/session`, and `POST /api/admin/logout`.
+- [x] 2.2 Implement `ADMIN_TOKEN` validation and 30-day signed HttpOnly session cookie.
 - [ ] 2.3 Reject all admin APIs without a valid session.
 
 ## 3. Admin Data Layer
