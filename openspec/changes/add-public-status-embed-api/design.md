@@ -25,7 +25,7 @@ Check CX 已迁移为 Astro 静态页面 + Hono Worker API + D1 + Cron Trigger�
 
 ### 限制截图目标
 
-截图 URL 由当前请求 origin 构造，固定为 `/`，只附加 `period` 和 `screenshot=1`。接口不接受外部 URL 参数，避免 SSRF 和任意截图滥用。
+截图 URL 由受信任的 `PUBLIC_ORIGIN` 环境变量构造，固定为 `/`，只附加 `period` 和 `screenshot=1`。请求的 origin 必须与 `PUBLIC_ORIGIN` 匹配，否则拒绝生成截图。接口不接受外部 URL 参数，也不从 `Host` 头推断截图目标，避免 SSRF 和任意截图滥用。
 
 ### 使用 `dashboard_snapshots` 作为公开 JSON 数据源
 

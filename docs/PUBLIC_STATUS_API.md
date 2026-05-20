@@ -11,6 +11,8 @@ Check CX 提供两个公开只读接口，供其他站点展示当前 AI provide
 - **Cache:** `ETag`、`Cache-Control`、`CDN-Cache-Control`
 - **CORS:** `Access-Control-Allow-Origin: *`
 
+`providers[].group` 是按 provider `type` 映射得到的展示分组，例如 `openai` 对应 `OpenAI`、`anthropic` 对应 `Claude`；它不是数据库里的配置业务分组名称。
+
 ### 响应示例
 
 ```json

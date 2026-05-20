@@ -35,6 +35,7 @@ The system SHALL expose `GET /api/public/status-card.png` as a public, unauthent
 #### Scenario: PNG screenshot is requested
 
 - **GIVEN** a dashboard snapshot exists
+- **AND** `PUBLIC_ORIGIN` is configured to the public site origin
 - **WHEN** a client requests `GET /api/public/status-card.png?period=7d`
 - **THEN** the response status is `200`
 - **AND** `Content-Type` is `image/png`
@@ -48,6 +49,13 @@ The system SHALL expose `GET /api/public/status-card.png` as a public, unauthent
 - **WHEN** the client requests `GET /api/public/status-card.png`
 - **THEN** the response status is `304`
 - **AND** the response does not include a body
+- **AND** the request does not launch a Browser Rendering session
+
+#### Scenario: Screenshot origin is not trusted
+
+- **GIVEN** `PUBLIC_ORIGIN` is missing, invalid, or different from the request origin
+- **WHEN** a client requests `GET /api/public/status-card.png`
+- **THEN** the response status is `503` for missing or invalid configuration, or `403` for origin mismatch
 - **AND** the request does not launch a Browser Rendering session
 
 ### Requirement: Public API Worker Safety
