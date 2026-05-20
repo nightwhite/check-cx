@@ -8,7 +8,7 @@
 
 - [x] 2.1 Add failing tests for `POST /api/admin/session`, `GET /api/admin/session`, and `POST /api/admin/logout`.
 - [x] 2.2 Implement `ADMIN_TOKEN` validation and 30-day signed HttpOnly session cookie.
-- [ ] 2.3 Reject all admin APIs without a valid session.
+- [x] 2.3 Reject all admin APIs without a valid session.
 
 ## 3. Admin Data Layer
 
@@ -18,9 +18,9 @@
 
 ## 4. Admin API
 
-- [ ] 4.1 Add contract tests for `/api/admin/*` CRUD routes.
-- [ ] 4.2 Implement templates, models, configs, groups, notifications, and runtime routes.
-- [ ] 4.3 Ensure GET routes do not call provider check code or Cron job code.
+- [x] 4.1 Add contract tests for `/api/admin/*` CRUD routes.
+- [x] 4.2 Implement templates, models, configs, groups, notifications, and runtime routes.
+- [x] 4.3 Ensure GET routes do not call provider check code or Cron job code.
 
 ## 5. Admin UI
 
