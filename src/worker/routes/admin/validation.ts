@@ -11,6 +11,10 @@ export class AdminConflictError extends Error {
   readonly status = 409;
 }
 
+export class AdminNotFoundError extends Error {
+  readonly status = 404;
+}
+
 export function assertObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new AdminValidationError("请求体必须是 JSON object");

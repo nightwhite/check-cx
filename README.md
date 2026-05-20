@@ -139,7 +139,7 @@ pnpm dev
 - `GET /api/group/[groupName]?trendPeriod=7d|15d|30d`：分组详情数据。
 - `GET /api/v1/status?group=...&model=...`：对外只读状态 API。
 - `GET /api/public/status`：对外公开状态汇总 API。
-- `GET /api/public/status-card.svg?period=7d|15d|30d`：状态卡片 SVG，可用于其他站点嵌入。
+- `GET /api/public/status-card.png?period=7d|15d|30d`：状态页截图 PNG，可用于其他站点嵌入。
 - `/api/admin/*`：Workers 内置管理台 API，使用 `ADMIN_TOKEN` 登录 session 保护。
 
 更详细的接口定义与数据结构说明请参见下列文档。

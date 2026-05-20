@@ -26,8 +26,8 @@ class D1StatementForSqlite {
   }
 
   async run() {
-    this.statement.run(...this.values);
-    return { meta: { changes: 1 } };
+    const result = this.statement.run(...this.values) as { changes?: number } | undefined;
+    return { meta: { changes: result?.changes ?? 0 } };
   }
 }
 
@@ -266,6 +266,100 @@ describe("admin management routes", () => {
     );
     expect(notificationDelete.status).toBe(200);
     await expect(notificationDelete.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("rejects admin model/template and config/model provider mismatches", async () => {
+    const app = createWorkerApp();
+    const env = await createEnv();
+    const cookie = await loginCookie(app, env);
+
+    const templateResponse = await app.request(
+      "http://example.com/api/admin/templates",
+      jsonRequest("POST", cookie, {
+        name: "OpenAI template",
+        type: "openai",
+        requestHeader: null,
+        metadata: null,
+      }),
+      env
+    );
+    expect(templateResponse.status).toBe(201);
+    const template = (await templateResponse.json()) as { id: string };
+
+    const mismatchedModel = await app.request(
+      "http://example.com/api/admin/models",
+      jsonRequest("POST", cookie, {
+        type: "anthropic",
+        model: "claude-sonnet-4.5",
+        templateId: template.id,
+      }),
+      env
+    );
+    expect(mismatchedModel.status).toBe(409);
+    await expect(mismatchedModel.json()).resolves.toEqual({
+      error: "模型类型必须与请求模板类型一致",
+    });
+
+    const modelResponse = await app.request(
+      "http://example.com/api/admin/models",
+      jsonRequest("POST", cookie, {
+        type: "openai",
+        model: "gpt-5.5",
+        templateId: template.id,
+      }),
+      env
+    );
+    expect(modelResponse.status).toBe(201);
+    const model = (await modelResponse.json()) as { id: string };
+
+    const mismatchedConfig = await app.request(
+      "http://example.com/api/admin/configs",
+      jsonRequest("POST", cookie, {
+        name: "Claude over OpenAI model",
+        type: "anthropic",
+        modelId: model.id,
+        endpoint: "https://example.com/v1/messages",
+        apiKey: "sk-test",
+        enabled: true,
+        isMaintenance: false,
+        groupName: "SU8",
+      }),
+      env
+    );
+    expect(mismatchedConfig.status).toBe(409);
+    await expect(mismatchedConfig.json()).resolves.toEqual({
+      error: "配置类型必须与模型类型一致",
+    });
+  });
+
+  it("returns 404 when updating or deleting a missing config", async () => {
+    const app = createWorkerApp();
+    const env = await createEnv();
+    const cookie = await loginCookie(app, env);
+
+    const update = await app.request(
+      "http://example.com/api/admin/configs/missing-config",
+      jsonRequest("PATCH", cookie, {
+        name: "Missing",
+        type: "openai",
+        modelId: "missing-model",
+        endpoint: "https://example.com/v1/responses",
+        enabled: true,
+        isMaintenance: false,
+        groupName: null,
+      }),
+      env
+    );
+    expect(update.status).toBe(404);
+    await expect(update.json()).resolves.toEqual({ error: "配置不存在" });
+
+    const deletion = await app.request(
+      "http://example.com/api/admin/configs/missing-config",
+      { method: "DELETE", headers: { Cookie: cookie } },
+      env
+    );
+    expect(deletion.status).toBe(404);
+    await expect(deletion.json()).resolves.toEqual({ error: "配置不存在" });
   });
 
   it("returns summary and runtime status for authenticated admins", async () => {

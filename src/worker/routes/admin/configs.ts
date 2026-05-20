@@ -4,6 +4,8 @@ import { encryptProviderKey } from "../../crypto/provider-key";
 import { createAdminConfigRepository } from "../../db/repositories/admin";
 import { nowMs, routeError } from "./helpers";
 import {
+  AdminConflictError,
+  AdminNotFoundError,
   optionalBoolean,
   optionalString,
   providerType,
@@ -32,6 +34,19 @@ function getEncryptionKey(env: Env): string {
   return value;
 }
 
+async function validateConfigModelType(
+  repository: ReturnType<typeof createAdminConfigRepository>,
+  input: ReturnType<typeof baseConfigPayload>
+) {
+  const model = await repository.findModelType(input.modelId);
+  if (!model) {
+    throw new AdminNotFoundError("模型不存在");
+  }
+  if (model.type !== input.type) {
+    throw new AdminConflictError("配置类型必须与模型类型一致");
+  }
+}
+
 export const adminConfigRoutes = new Hono<{ Bindings: Env }>()
   .get("/", async (c) => c.json(await createAdminConfigRepository(c.env.DB).list()))
   .post("/", async (c) => {
@@ -46,6 +61,7 @@ export const adminConfigRoutes = new Hono<{ Bindings: Env }>()
           getEncryptionKey(c.env)
         ),
       };
+      await validateConfigModelType(repository, input);
       await repository.create(input);
       const record = (await repository.list()).find((item) => item.id === input.id);
       return c.json(record, 201);
@@ -56,10 +72,18 @@ export const adminConfigRoutes = new Hono<{ Bindings: Env }>()
   .patch("/:id", async (c) => {
     try {
       const repository = createAdminConfigRepository(c.env.DB);
-      await repository.update(
+      const input = baseConfigPayload(await readJsonObject(c.req.raw));
+      if (!(await repository.exists(c.req.param("id")))) {
+        throw new AdminNotFoundError("配置不存在");
+      }
+      await validateConfigModelType(repository, input);
+      const updated = await repository.update(
         c.req.param("id"),
-        baseConfigPayload(await readJsonObject(c.req.raw))
+        input
       );
+      if (!updated) {
+        throw new AdminNotFoundError("配置不存在");
+      }
       const record = (await repository.list()).find(
         (item) => item.id === c.req.param("id")
       );
@@ -69,13 +93,22 @@ export const adminConfigRoutes = new Hono<{ Bindings: Env }>()
     }
   })
   .delete("/:id", async (c) => {
-    await createAdminConfigRepository(c.env.DB).delete(c.req.param("id"));
-    return c.json({ ok: true });
+    try {
+      const deleted = await createAdminConfigRepository(c.env.DB).delete(
+        c.req.param("id")
+      );
+      if (!deleted) {
+        throw new AdminNotFoundError("配置不存在");
+      }
+      return c.json({ ok: true });
+    } catch (error) {
+      return routeError(c, error);
+    }
   })
   .post("/:id/secret", async (c) => {
     try {
       const body = await readJsonObject(c.req.raw);
-      await createAdminConfigRepository(c.env.DB).replaceSecret(
+      const replaced = await createAdminConfigRepository(c.env.DB).replaceSecret(
         c.req.param("id"),
         await encryptProviderKey(
           requiredString(body, "apiKey", "API Key"),
@@ -83,6 +116,9 @@ export const adminConfigRoutes = new Hono<{ Bindings: Env }>()
         ),
         nowMs()
       );
+      if (!replaced) {
+        throw new AdminNotFoundError("配置不存在");
+      }
       return c.json({ ok: true, hasApiKey: true });
     } catch (error) {
       return routeError(c, error);

@@ -6,7 +6,7 @@ export type AdminRouteContext = Context<{ Bindings: Env }>;
 
 export function routeError(c: AdminRouteContext, error: unknown) {
   if (isAdminRouteError(error)) {
-    return c.json({ error: error.message }, error.status as 400 | 409);
+    return c.json({ error: error.message }, error.status as 400 | 404 | 409);
   }
 
   throw error;

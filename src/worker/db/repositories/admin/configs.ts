@@ -26,6 +26,15 @@ interface ConfigRow {
   updated_at_ms: number;
 }
 
+interface ModelTypeRow {
+  id: string;
+  type: AdminProviderType;
+}
+
+interface ConfigIdRow {
+  id: string;
+}
+
 function toRecord(row: ConfigRow): AdminConfigRecord {
   return {
     id: row.id,
@@ -101,8 +110,23 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
       return (rows.results ?? []).map(toRecord);
     },
 
+    async findModelType(id: string) {
+      return await db
+        .prepare("SELECT id, type FROM check_models WHERE id = ?")
+        .bind(id)
+        .first<ModelTypeRow>();
+    },
+
+    async exists(id: string) {
+      const row = await db
+        .prepare("SELECT id FROM check_configs WHERE id = ?")
+        .bind(id)
+        .first<ConfigIdRow>();
+      return Boolean(row);
+    },
+
     async update(id: string, input: UpdateAdminConfigInput) {
-      await db
+      const result = await db
         .prepare(
           `UPDATE check_configs
            SET name = ?, type = ?, model_id = ?, endpoint = ?, enabled = ?,
@@ -121,6 +145,7 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
           id
         )
         .run();
+      return changed(result);
     },
 
     async replaceSecret(
@@ -129,7 +154,7 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
       nowMs: number
     ) {
       const [ciphertext, nonce, version] = bindEncryptedKey(encryptedKey);
-      await db
+      const result = await db
         .prepare(
           `UPDATE check_configs
            SET api_key_ciphertext = ?, api_key_nonce = ?, api_key_version = ?,
@@ -138,6 +163,7 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
         )
         .bind(ciphertext, nonce, version, nowMs, id)
         .run();
+      return changed(result);
     },
 
     async delete(id: string) {

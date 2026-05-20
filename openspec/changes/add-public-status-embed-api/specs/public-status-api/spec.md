@@ -28,25 +28,27 @@ The system SHALL expose `GET /api/public/status` as a public, unauthenticated JS
 - **THEN** the response status is `400`
 - **AND** the response body lists the allowed periods: `7d`, `15d`, and `30d`
 
-### Requirement: Public Status SVG Card API
+### Requirement: Public Status PNG Screenshot API
 
-The system SHALL expose `GET /api/public/status-card.svg` as a public, unauthenticated SVG image API for embedding the current Check CX status.
+The system SHALL expose `GET /api/public/status-card.png` as a public, unauthenticated PNG image API for embedding the current Check CX status page.
 
-#### Scenario: SVG card is requested
+#### Scenario: PNG screenshot is requested
 
 - **GIVEN** a dashboard snapshot exists
-- **WHEN** a client requests `GET /api/public/status-card.svg?period=7d`
+- **WHEN** a client requests `GET /api/public/status-card.png?period=7d`
 - **THEN** the response status is `200`
-- **AND** `Content-Type` is `image/svg+xml; charset=utf-8`
-- **AND** the SVG contains the overall status, provider counts, update time, and a short provider list
+- **AND** `Content-Type` is `image/png`
+- **AND** the image is rendered from the real public Dashboard page
+- **AND** the screenshot captures the full page beyond the initial viewport
 - **AND** the response includes `Access-Control-Allow-Origin: *`, `ETag`, and cache headers
 
-#### Scenario: SVG card cache validator matches
+#### Scenario: PNG screenshot cache validator matches
 
-- **GIVEN** the client sends `If-None-Match` matching the generated SVG ETag
-- **WHEN** the client requests `GET /api/public/status-card.svg`
+- **GIVEN** the client sends `If-None-Match` matching the screenshot ETag
+- **WHEN** the client requests `GET /api/public/status-card.png`
 - **THEN** the response status is `304`
 - **AND** the response does not include a body
+- **AND** the request does not launch a Browser Rendering session
 
 ### Requirement: Public API Worker Safety
 
@@ -58,4 +60,4 @@ The public status APIs SHALL be read-only request handlers suitable for Cloudfla
 - **THEN** it reads from `dashboard_snapshots`
 - **AND** it does not call provider check code
 - **AND** it does not run the Cron health check job
-- **AND** it does not depend on Node-only APIs
+- **AND** the PNG screenshot endpoint does not accept arbitrary external URLs

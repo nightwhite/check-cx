@@ -17,6 +17,11 @@ interface ModelRow {
   updated_at_ms: number;
 }
 
+interface TemplateTypeRow {
+  id: string;
+  type: AdminProviderType;
+}
+
 function toRecord(row: ModelRow): AdminModelRecord {
   return {
     id: row.id,
@@ -62,8 +67,15 @@ export function createAdminModelRepository(db: AdminD1Executor) {
       return (rows.results ?? []).map(toRecord);
     },
 
+    async findTemplateType(id: string) {
+      return await db
+        .prepare("SELECT id, type FROM check_request_templates WHERE id = ?")
+        .bind(id)
+        .first<TemplateTypeRow>();
+    },
+
     async update(id: string, input: UpdateAdminModelInput) {
-      await db
+      const result = await db
         .prepare(
           `UPDATE check_models
            SET type = ?, model = ?, template_id = ?, updated_at_ms = ?
@@ -71,6 +83,7 @@ export function createAdminModelRepository(db: AdminD1Executor) {
         )
         .bind(input.type, input.model, input.templateId, input.nowMs, id)
         .run();
+      return changed(result);
     },
 
     async delete(id: string) {
