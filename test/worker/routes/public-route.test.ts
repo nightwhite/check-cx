@@ -292,6 +292,31 @@ describe("public status routes", () => {
       error: "invalid_period",
       allowed: ["7d", "15d", "30d"],
     });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+
+  it("returns a controlled no-store error when snapshot JSON is corrupt", async () => {
+    const app = createWorkerApp();
+
+    const response = await app.request(
+      "http://example.com/api/public/status?period=7d",
+      {},
+      createEnv(
+        createDb({
+          payload_json: "{not-json",
+          etag: "\"bad\"",
+          generated_at_ms: 1_779_235_260_000,
+        })
+      )
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "snapshot_payload_invalid",
+    });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
   });
 
   it("serves a PNG screenshot rendered from the public status page", async () => {
@@ -372,6 +397,7 @@ describe("public status routes", () => {
     await expect(response.json()).resolves.toEqual({
       error: "public_origin_required",
     });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(browserState.launch).not.toHaveBeenCalled();
   });
 
@@ -410,6 +436,7 @@ describe("public status routes", () => {
     await expect(response.json()).resolves.toEqual({
       error: "origin_mismatch",
     });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(browserState.launch).not.toHaveBeenCalled();
   });
 });

@@ -273,7 +273,7 @@ function extractTextFromResponseStreamEvent(payload: unknown): string {
 }
 
 function parseResponseStreamEvent(rawEvent: string): string {
-  let text = "";
+  const dataLines: string[] = [];
   for (const line of rawEvent.split(/\r?\n/)) {
     if (!line.startsWith("data:")) {
       continue;
@@ -283,10 +283,18 @@ function parseResponseStreamEvent(rawEvent: string): string {
     if (!data || data === "[DONE]") {
       continue;
     }
-
-    text += extractTextFromResponseStreamEvent(JSON.parse(data));
+    dataLines.push(data);
   }
-  return text;
+
+  if (dataLines.length === 0) {
+    return "";
+  }
+
+  try {
+    return extractTextFromResponseStreamEvent(JSON.parse(dataLines.join("\n")));
+  } catch {
+    throw new Error("Malformed Responses stream event");
+  }
 }
 
 async function readTextFromResponseStream(

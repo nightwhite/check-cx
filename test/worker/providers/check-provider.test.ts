@@ -330,6 +330,51 @@ describe("checkProvider", () => {
     expect(result.logMessage).toBe("8");
   });
 
+  it("parses Responses stream events with multi-line data fields", async () => {
+    const fetcher = vi.fn(async () =>
+      textStreamResponse([
+        'data: {"type":"response.output_text.delta",\n',
+        'data: "delta":"8"}\n\n',
+      ])
+    );
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        model: "gpt-5.5",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("8");
+  });
+
+  it("returns a clear failure for malformed Responses stream events", async () => {
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        model: "gpt-5.5",
+      },
+      {
+        challenge,
+        fetcher: async () => textStreamResponse(["data: {not-json}\n\n"]),
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("Malformed Responses stream event");
+  });
+
   it("uses OpenAI-compatible formatting for non-Google Gemini endpoints", async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({ choices: [{ message: { content: "8" } }] })

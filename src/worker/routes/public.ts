@@ -21,6 +21,16 @@ const CACHE_HEADERS = {
   "Cloudflare-CDN-Cache-Control": "max-age=60, stale-while-revalidate=300",
   Vary: "Accept-Encoding",
 };
+const ERROR_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Cache-Control": "no-store",
+};
+
+class SnapshotPayloadError extends Error {
+  constructor() {
+    super("snapshot_payload_invalid");
+  }
+}
 
 function generateETag(value: string): string {
   let hash = 5381;
@@ -45,7 +55,11 @@ async function loadDashboardSnapshot(
   if (!row) {
     return null;
   }
-  return JSON.parse(row.payload_json) as DashboardSnapshotPayload;
+  try {
+    return JSON.parse(row.payload_json) as DashboardSnapshotPayload;
+  } catch {
+    throw new SnapshotPayloadError();
+  }
 }
 
 function invalidPeriodResponse() {
@@ -55,7 +69,7 @@ function invalidPeriodResponse() {
       status: 400,
       headers: {
         "Content-Type": "application/json; charset=utf-8",
-        ...CACHE_HEADERS,
+        ...ERROR_HEADERS,
       },
     }
   );
@@ -66,9 +80,20 @@ function jsonErrorResponse(status: number, error: string) {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      ...CACHE_HEADERS,
+      ...ERROR_HEADERS,
     },
   });
+}
+
+async function loadPublicSnapshotOrError(env: Env, period: string) {
+  try {
+    return await loadDashboardSnapshot(env, period);
+  } catch (error) {
+    if (error instanceof SnapshotPayloadError) {
+      return jsonErrorResponse(500, error.message);
+    }
+    throw error;
+  }
 }
 
 function cachedResponse(
@@ -110,12 +135,16 @@ export const publicRoutes = new Hono<{ Bindings: Env }>()
       return invalidPeriodResponse();
     }
 
-    const snapshot = await loadDashboardSnapshot(c.env, period);
+    const snapshot = await loadPublicSnapshotOrError(c.env, period);
+    if (snapshot instanceof Response) {
+      return snapshot;
+    }
     const payload = buildPublicStatusPayload(snapshot, period);
+    const body = JSON.stringify(payload);
     return cachedResponse(
       c.req.raw,
-      JSON.stringify(payload),
-      JSON.stringify(payload),
+      body,
+      body,
       "application/json; charset=utf-8"
     );
   })
@@ -125,7 +154,10 @@ export const publicRoutes = new Hono<{ Bindings: Env }>()
       return invalidPeriodResponse();
     }
 
-    const snapshot = await loadDashboardSnapshot(c.env, period);
+    const snapshot = await loadPublicSnapshotOrError(c.env, period);
+    if (snapshot instanceof Response) {
+      return snapshot;
+    }
     const etagSource = JSON.stringify({
       period,
       generatedAt: snapshot?.generatedAt ?? snapshot?.lastUpdated ?? null,
