@@ -19,6 +19,7 @@ import type {
   ProviderTimeline,
   TimelineItem,
 } from "@/lib/types";
+import { ProviderIcon } from "@/components/provider-icon";
 import { cn } from "@/lib/utils";
 
 const PERIODS: Array<{ value: AvailabilityPeriod; label: string }> = [
@@ -369,10 +370,11 @@ function ProviderRow({
                 {getProviderDisplayName(latest.name)}
               </h2>
               <div className="flex flex-wrap items-center gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-muted/55 shadow-sm ring-1 ring-border/65 transition-transform group-hover:scale-105">
-                  <span className="text-sm font-black uppercase text-foreground/80">
-                    {(PROVIDER_LABEL[latest.type] ?? latest.type).slice(0, 2)}
-                  </span>
+                <div
+                  aria-label={`${PROVIDER_LABEL[latest.type] ?? latest.type} provider`}
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-muted/55 shadow-sm ring-1 ring-border/65 transition-transform group-hover:scale-105"
+                >
+                  <ProviderIcon type={latest.type} size={28} className="text-foreground/80" />
                 </div>
                 <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <span className="rounded-md bg-muted px-2 py-0.5 font-semibold text-foreground/70">

@@ -311,6 +311,8 @@ describe("DashboardIsland", () => {
     expect(screen.queryByRole("combobox", { name: "Provider 筛选" })).toBeNull();
     expect(screen.getByText("Status Page")).not.toBeNull();
     expect(screen.getByText("https://www.su8.codes")).not.toBeNull();
+    expect(screen.getByLabelText("OpenAI provider")).not.toBeNull();
+    expect(screen.queryByText("OP")).toBeNull();
     expect(screen.queryByText("prod")).toBeNull();
     expect(screen.queryByText("su8")).toBeNull();
     expect(screen.queryByText("1 个配置")).toBeNull();
