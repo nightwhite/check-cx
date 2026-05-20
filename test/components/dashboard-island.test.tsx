@@ -236,7 +236,7 @@ describe("DashboardIsland", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("uses SU8 as the public site identity instead of the database group name", async () => {
+  it("uses SU8.Codes as the public site identity instead of the database group name", async () => {
     window.history.replaceState({}, "", "/group/OpenAI");
     vi.stubGlobal(
       "fetch",
@@ -248,7 +248,7 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByRole("heading", { name: "SU8" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "SU8.Codes" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "OpenAI" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("heading", { name: "Check CX" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "SU8", level: 2 })).toBeNull();
@@ -286,7 +286,7 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByRole("heading", { name: "SU8" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "SU8.Codes" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "Claude" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "OpenAI" })).toBeNull();

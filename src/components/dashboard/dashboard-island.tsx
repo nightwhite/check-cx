@@ -27,7 +27,8 @@ const PERIODS: Array<{ value: AvailabilityPeriod; label: string }> = [
   { value: "15d", label: "15 天" },
   { value: "30d", label: "30 天" },
 ];
-const SITE_NAME = "SU8";
+const SITE_GROUP_NAME = "SU8";
+const SITE_DISPLAY_NAME = "SU8.Codes";
 const HISTORY_SEGMENT_COUNT = 60;
 
 const STATUS_LABEL: Record<string, string> = {
@@ -101,7 +102,7 @@ function getProviderFamilies(data: DashboardData | null) {
 }
 
 function getSiteInfo(data: DashboardData | null) {
-  return data?.groupInfos.find((info) => info.groupName === SITE_NAME) ?? null;
+  return data?.groupInfos.find((info) => info.groupName === SITE_GROUP_NAME) ?? null;
 }
 
 function getAvailabilityStat(
@@ -602,7 +603,7 @@ export function DashboardIsland() {
             </div>
             <div className="space-y-3">
               <h1 className="text-5xl font-black tracking-normal text-foreground md:text-7xl">
-                {SITE_NAME}
+                {SITE_DISPLAY_NAME}
               </h1>
               <div className="flex flex-wrap items-center gap-2">
                 {siteInfo?.websiteUrl && (
