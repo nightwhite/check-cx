@@ -133,7 +133,7 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByText("OpenAI")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "OpenAI" })).not.toBeNull();
 
     await act(async () => {
       vi.advanceTimersByTime(1_000);
@@ -143,7 +143,7 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByText("Anthropic")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Anthropic" })).not.toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -246,8 +246,8 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByText("Ungrouped")).not.toBeNull();
-    expect(screen.queryByText("OpenAI")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Ungrouped" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "OpenAI" })).toBeNull();
   });
 
 
@@ -266,10 +266,15 @@ describe("DashboardIsland", () => {
 
     expect(screen.getByLabelText("搜索 Provider、模型、端点或分组")).not.toBeNull();
     expect(screen.getByLabelText("分组筛选")).not.toBeNull();
+    expect(screen.getByText("Status Page")).not.toBeNull();
     expect(screen.getByText("https://core.example")).not.toBeNull();
     expect(screen.getByText("prod")).not.toBeNull();
-    expect(screen.getByText("7 天可用率 90%")).not.toBeNull();
-    expect(screen.getByText("趋势 2 点")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "7 天" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("90.00%")).not.toBeNull();
+    expect(screen.getByText("2 点")).not.toBeNull();
     expect(screen.getByText("Provider returned HTTP 500")).not.toBeNull();
     expect(screen.getByText("官方状态：OpenAI incident")).not.toBeNull();
   });
