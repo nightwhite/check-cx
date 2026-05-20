@@ -4,7 +4,10 @@ import {
   buildPublicStatusPayload,
   type DashboardSnapshotPayload,
 } from "./public-status";
-import { renderPublicStatusScreenshotPng } from "./public-status-screenshot";
+import {
+  normalizePublicOrigin,
+  renderPublicStatusScreenshotPng,
+} from "./public-status-screenshot";
 import { parseTrendPeriod, VALID_TREND_PERIODS } from "./trend-period";
 
 interface SnapshotRow {
@@ -56,6 +59,16 @@ function invalidPeriodResponse() {
       },
     }
   );
+}
+
+function jsonErrorResponse(status: number, error: string) {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      ...CACHE_HEADERS,
+    },
+  });
 }
 
 function cachedResponse(
@@ -128,9 +141,17 @@ export const publicRoutes = new Hono<{ Bindings: Env }>()
       });
     }
 
+    const publicOrigin = normalizePublicOrigin(c.env.PUBLIC_ORIGIN);
+    if (!publicOrigin) {
+      return jsonErrorResponse(503, "public_origin_required");
+    }
+    if (new URL(c.req.url).origin !== publicOrigin) {
+      return jsonErrorResponse(403, "origin_mismatch");
+    }
+
     const image = await renderPublicStatusScreenshotPng(
       c.env.BROWSER,
-      c.req.raw,
+      publicOrigin,
       period
     );
     return cachedResponse(

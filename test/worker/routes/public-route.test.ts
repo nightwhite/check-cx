@@ -57,7 +57,8 @@ class FakeD1 {
   }
 }
 
-function createEnv(db: FakeD1) {
+function createEnv(db: FakeD1, overrides: Partial<Env> = {}) {
+  browserState.launch.mockClear();
   browserState.calls = {
     goto: "",
     selector: "",
@@ -92,6 +93,8 @@ function createEnv(db: FakeD1) {
     DB: db,
     ASSETS: { fetch: async () => new Response("asset") },
     BROWSER: { fetch: async () => new Response(null) },
+    PUBLIC_ORIGIN: "https://status.example.com",
+    ...overrides,
   } as unknown as Env;
 }
 
@@ -302,7 +305,7 @@ describe("public status routes", () => {
     );
 
     const response = await app.request(
-      "http://example.com/api/public/status-card.png?period=7d",
+      "https://status.example.com/api/public/status-card.png?period=7d",
       {},
       env
     );
@@ -317,7 +320,7 @@ describe("public status routes", () => {
     expect(response.headers.get("ETag")).toMatch(/^".+"$/);
     expect(Array.from(body)).toEqual(Array.from(pngHeader));
     expect(browserState.calls.goto).toBe(
-      "http://example.com/?period=7d&screenshot=1"
+      "https://status.example.com/?period=7d&screenshot=1"
     );
     expect(browserState.calls.selector).toBe("[data-dashboard-ready='true']");
     expect(browserState.calls.screenshot).toEqual({
@@ -338,14 +341,14 @@ describe("public status routes", () => {
       })
     );
     const initial = await app.request(
-      "http://example.com/api/public/status-card.png?period=7d",
+      "https://status.example.com/api/public/status-card.png?period=7d",
       {},
       env
     );
     const etag = initial.headers.get("ETag") ?? "";
 
     const response = await app.request(
-      "http://example.com/api/public/status-card.png?period=7d",
+      "https://status.example.com/api/public/status-card.png?period=7d",
       { headers: { "If-None-Match": etag } },
       env
     );
@@ -353,5 +356,60 @@ describe("public status routes", () => {
     expect(response.status).toBe(304);
     expect(await response.text()).toBe("");
     expect(response.headers.get("ETag")).toBe(etag);
+  });
+
+  it("rejects PNG screenshots when PUBLIC_ORIGIN is missing", async () => {
+    const app = createWorkerApp();
+    const env = createEnv(createDb(null), { PUBLIC_ORIGIN: undefined });
+
+    const response = await app.request(
+      "https://status.example.com/api/public/status-card.png?period=7d",
+      {},
+      env
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "public_origin_required",
+    });
+    expect(browserState.launch).not.toHaveBeenCalled();
+  });
+
+  it("rejects PNG screenshots when PUBLIC_ORIGIN is invalid", async () => {
+    const app = createWorkerApp();
+    const env = createEnv(createDb(null), {
+      PUBLIC_ORIGIN: "not-a-url",
+    });
+
+    const response = await app.request(
+      "https://status.example.com/api/public/status-card.png?period=7d",
+      {},
+      env
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "public_origin_required",
+    });
+    expect(browserState.launch).not.toHaveBeenCalled();
+  });
+
+  it("rejects PNG screenshots from origins that do not match PUBLIC_ORIGIN", async () => {
+    const app = createWorkerApp();
+    const env = createEnv(createDb(null), {
+      PUBLIC_ORIGIN: "https://status.example.com",
+    });
+
+    const response = await app.request(
+      "https://evil.example.com/api/public/status-card.png?period=7d",
+      {},
+      env
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: "origin_mismatch",
+    });
+    expect(browserState.launch).not.toHaveBeenCalled();
   });
 });

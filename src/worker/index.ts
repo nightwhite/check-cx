@@ -9,7 +9,9 @@ function normalizeAdminPath(value: string | undefined): string {
   }
 
   const path = value.trim();
-  return path.startsWith("/") ? path : `/${path}`;
+  const withLeadingSlash = path.startsWith("/") ? path : `/${path}`;
+  const normalized = withLeadingSlash.replace(/\/+$/g, "");
+  return normalized || "/admin";
 }
 
 function isAdminPath(pathname: string, adminPath: string): boolean {

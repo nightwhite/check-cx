@@ -4,8 +4,24 @@ import type { TrendPeriod } from "./trend-period";
 
 const SCREENSHOT_READY_SELECTOR = "[data-dashboard-ready='true']";
 
-function buildDashboardScreenshotUrl(request: Request, period: TrendPeriod): string {
-  const url = new URL(request.url);
+export function normalizePublicOrigin(value: string | undefined): string | null {
+  if (!value || value.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function buildDashboardScreenshotUrl(origin: string, period: TrendPeriod): string {
+  const url = new URL(origin);
   url.pathname = "/";
   url.search = "";
   url.searchParams.set("period", period);
@@ -15,7 +31,7 @@ function buildDashboardScreenshotUrl(request: Request, period: TrendPeriod): str
 
 export async function renderPublicStatusScreenshotPng(
   browserBinding: BrowserWorker,
-  request: Request,
+  publicOrigin: string,
   period: TrendPeriod
 ): Promise<Uint8Array> {
   const browser = await launch(browserBinding);
@@ -28,7 +44,7 @@ export async function renderPublicStatusScreenshotPng(
     await page.setExtraHTTPHeaders({
       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     });
-    await page.goto(buildDashboardScreenshotUrl(request, period), {
+    await page.goto(buildDashboardScreenshotUrl(publicOrigin, period), {
       waitUntil: "domcontentloaded",
     });
     await page.waitForSelector(SCREENSHOT_READY_SELECTOR, { timeout: 10_000 });

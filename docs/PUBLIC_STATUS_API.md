@@ -54,8 +54,10 @@ Check CX 提供两个公开只读接口，供其他站点展示当前 AI provide
 - **Response:** `image/png`
 - **Cache:** `ETag`、`Cache-Control`、`CDN-Cache-Control`
 - **CORS:** `Access-Control-Allow-Origin: *`
+- **配置:** 必须设置 `PUBLIC_ORIGIN` 为公开访问源，例如 `https://check-cx.example.com`
 
 该接口通过 Cloudflare Browser Rendering 打开当前站点首页，并在 Dashboard 数据加载完成后截取整页 PNG。它不是手写 SVG 卡片，也不支持截取任意外部 URL。
+请求来源必须与 `PUBLIC_ORIGIN` 匹配，否则返回 `403 origin_mismatch`；未配置或配置非法时返回 `503 public_origin_required`。
 
 ### 嵌入示例
 

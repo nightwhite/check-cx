@@ -7,6 +7,7 @@ declare global {
     ADMIN_TOKEN?: string;
     CONFIG_ENCRYPTION_KEY?: string;
     INTERNAL_METRICS_TOKEN?: string;
+    PUBLIC_ORIGIN?: string;
   }
 }
 

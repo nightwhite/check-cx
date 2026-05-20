@@ -72,6 +72,36 @@ describe("worker fetch handler", () => {
     await expect(response.text()).resolves.toBe("asset:/admin/index.html");
   });
 
+  it("normalizes ADMIN_PATH with a trailing slash", async () => {
+    const request = new Request(
+      "http://example.com/ops/settings"
+    ) as unknown as Parameters<typeof worker.fetch>[0];
+
+    const response = await worker.fetch(
+      request,
+      createEnv({ ADMIN_PATH: "/ops/" } as Partial<Env>),
+      executionContext
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("asset:/admin/index.html");
+  });
+
+  it("matches the canonical admin path when ADMIN_PATH has a trailing slash", async () => {
+    const request = new Request(
+      "http://example.com/admin"
+    ) as unknown as Parameters<typeof worker.fetch>[0];
+
+    const response = await worker.fetch(
+      request,
+      createEnv({ ADMIN_PATH: "/admin/" } as Partial<Env>),
+      executionContext
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("asset:/admin/index.html");
+  });
+
   it("redirects the legacy SU8 group route to the canonical status page", async () => {
     const request = new Request(
       "http://example.com/group/SU8"
