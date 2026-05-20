@@ -90,13 +90,20 @@ pnpm dev
 ## 运行与部署
 
 ```bash
-pnpm dev    # 本地开发
+pnpm dev    # 本地 Workers 开发，默认读取 .env
 pnpm build  # 生产构建
-pnpm start  # 生产运行
+pnpm start  # 本地 Workers 预览，默认读取 .env
 pnpm lint   # 代码检查
 ```
 
-部署时，请将 `.env.local` 中的变量注入到目标平台，例如 Vercel、容器环境或自建服务器。
+Workers 版本本地开发使用仓库根目录的 `.env`：
+
+```bash
+cp .env.example .env
+pnpm dev
+```
+
+部署到 Cloudflare Workers 时，secret 变量使用 `wrangler secret put` 注入；非 secret 变量可以写入 `wrangler.jsonc` 的 `vars`。
 
 ## 配置说明
 

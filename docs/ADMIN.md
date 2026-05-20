@@ -26,13 +26,21 @@ Admin API 固定为：
 | `ADMIN_TOKEN` | 是 | 管理台登录 token。登录 session 默认 30 天。 |
 | `CONFIG_ENCRYPTION_KEY` | 是 | Provider key 加密密钥，必须是 16、24 或 32 字节。 |
 
-本地 `.env.local` 或 `.dev.vars` 示例：
+本地开发默认读取仓库根目录的 `.env`。可以从示例文件复制：
+
+```bash
+cp .env.example .env
+```
+
+`.env` 示例：
 
 ```env
 ADMIN_PATH=/admin
 ADMIN_TOKEN=replace-with-a-long-random-token
 CONFIG_ENCRYPTION_KEY=replace-with-16-24-or-32-byte-key
 ```
+
+`.env` 已被 `.gitignore` 忽略，可以放本地真实 token。`.env.example` 只能保留占位值。
 
 ## Cloudflare Secret
 
@@ -78,6 +86,7 @@ Cron 默认每分钟执行一次：
 
 ```bash
 pnpm install
+cp .env.example .env
 pnpm build
 pnpm dev
 ```

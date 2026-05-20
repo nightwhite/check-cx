@@ -3,10 +3,10 @@
   "version": "1.22.2",
   "private": true,
   "scripts": {
-    "dev": "astro build && wrangler dev",
+    "dev": "astro build && wrangler dev --env-file .env",
     "dev:astro": "astro dev",
     "build": "astro build",
-    "start": "wrangler dev",
+    "start": "wrangler dev --env-file .env",
     "start:astro": "astro preview",
     "lint": "eslint",
     "test": "vitest run",
