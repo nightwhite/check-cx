@@ -500,6 +500,16 @@ brief 必须锁定：
 反目标：不要营销页，不做重型 SaaS admin，不展示开发实现说明
 ```
 
+本任务 UI design brief：
+
+- 用户：维护 Check CX provider 配置和运行状态的人，通常是项目维护者或值班人员。
+- 首要动作：快速确认是否已登录、配置管理入口是否可用、Cron 运行状态是否可进入查看。
+- 视觉方向：运维控制台，使用深浅中性的工作台布局、紧凑导航、明确状态反馈和低装饰度表面。
+- 布局策略：未登录时展示聚焦的 token 登录面板；登录后使用侧边导航 + 主内容工作区，移动端折叠为顶部导航。
+- 关键状态：checking session、missing `ADMIN_TOKEN`、login error、authenticated shell、expired session。
+- 文案边界：页面只出现登录、导航、状态和操作反馈；不展示架构说明、技能说明、开发计划或 Cloudflare 实现细节。
+- 反目标：不要营销页，不做重型 SaaS admin，不添加批量操作入口，不展示 API key 明文或旧 key。
+
 - [ ] **步骤 5.2：编写 UI tests**
 
 测试必须覆盖：

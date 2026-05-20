@@ -24,7 +24,7 @@
 
 ## 5. Admin UI
 
-- [ ] 5.1 Add UI design brief section to the superpowers implementation plan.
+- [x] 5.1 Add UI design brief section to the superpowers implementation plan.
 - [x] 5.2 Implement Astro admin shell and React admin island.
 - [ ] 5.3 Implement login, overview, configs, models, templates, groups, notifications, and runtime views.
 - [ ] 5.4 Verify desktop and mobile layouts have no text overlap or horizontal overflow.
