@@ -81,15 +81,15 @@ curl -I "http://127.0.0.1:8787/api/public/status-card.png?period=7d"
 Wrangler 的 Chrome for Testing 缓存损坏。先从 Wrangler 日志确认正在使用的
 Chrome for Testing 缓存目录，再验证缓存里的浏览器二进制。
 
-macOS 上可用类似命令定位浏览器；其他系统需要替换为对应的 Wrangler 缓存目录：
+用 Wrangler 日志中的缓存目录替换 `SEARCH_ROOT` 后，定位并验证当前浏览器：
 
 ```bash
-find "$HOME/Library/Caches/.wrangler/chrome" \
-  -path "*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" \
-  -print -quit
+BROWSER_BIN="$(find "SEARCH_ROOT" -path "*/.wrangler/chrome/*" -type f \
+  \( -name "Google Chrome for Testing" -o -name "chrome" -o -name "chrome.exe" \) \
+  -print -quit)"
+"$BROWSER_BIN" --version
 ```
 
-然后用输出路径执行 `--version`，确认浏览器二进制能正常启动。
 若出现 `segment '__LINKEDIT' load command content extends beyond end of file`
 等二进制损坏错误，删除对应版本缓存后重新启动 `pnpm dev`，让 Wrangler
 重新下载。需要代理时，按本机代理地址设置环境变量，例如：
