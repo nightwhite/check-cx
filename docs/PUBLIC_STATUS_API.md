@@ -61,6 +61,46 @@ Check CX 提供两个公开只读接口，供其他站点展示当前 AI provide
 该接口通过 Cloudflare Browser Rendering 打开当前站点首页，并在 Dashboard 数据加载完成后截取整页 PNG。它不是手写 SVG 卡片，也不支持截取任意外部 URL。
 请求来源必须与 `PUBLIC_ORIGIN` 匹配，否则返回 `403 origin_mismatch`；未配置或配置非法时返回 `503 public_origin_required`。
 
+### 本地截图测试
+
+本项目的 `pnpm dev` 会通过 `wrangler dev --env-file .env` 显式读取
+`.env`。本地测试时，`.env` 中的 `PUBLIC_ORIGIN` 必须和访问地址完全一致。例如：
+
+```env
+PUBLIC_ORIGIN=http://127.0.0.1:8787
+```
+
+启动后用同一个 origin 访问：
+
+```bash
+pnpm dev
+curl -I "http://127.0.0.1:8787/api/public/status-card.png?period=7d"
+```
+
+如果 Wrangler 反复下载浏览器，或本地 Browser Rendering 启动失败，通常是
+Wrangler 的 Chrome for Testing 缓存损坏。先从 Wrangler 日志确认正在使用的
+Chrome for Testing 缓存目录，再验证缓存里的浏览器二进制。
+
+用 Wrangler 日志中的缓存目录替换 `SEARCH_ROOT` 后，定位并验证当前浏览器：
+
+```bash
+BROWSER_BIN="$(find "SEARCH_ROOT" -path "*/.wrangler/chrome/*" -type f \
+  \( -name "Google Chrome for Testing" -o -name "chrome" -o -name "chrome.exe" \) \
+  -print -quit)"
+"$BROWSER_BIN" --version
+```
+
+若出现 `segment '__LINKEDIT' load command content extends beyond end of file`
+等二进制损坏错误，删除对应版本缓存后重新启动 `pnpm dev`，让 Wrangler
+重新下载。需要代理时，按本机代理地址设置环境变量，例如：
+
+```bash
+HTTPS_PROXY=http://127.0.0.1:7890 \
+HTTP_PROXY=http://127.0.0.1:7890 \
+ALL_PROXY=socks5://127.0.0.1:7890 \
+pnpm dev
+```
+
 ### 嵌入示例
 
 ```html
