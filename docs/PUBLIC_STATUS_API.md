@@ -63,7 +63,8 @@ Check CX 提供两个公开只读接口，供其他站点展示当前 AI provide
 
 ### 本地截图测试
 
-本地测试时，`.env` 中的 `PUBLIC_ORIGIN` 必须和访问地址完全一致。例如：
+本项目的 `pnpm dev` 会通过 `wrangler dev --env-file .env` 显式读取
+`.env`。本地测试时，`.env` 中的 `PUBLIC_ORIGIN` 必须和访问地址完全一致。例如：
 
 ```env
 PUBLIC_ORIGIN=http://127.0.0.1:8787
@@ -76,16 +77,26 @@ pnpm dev
 curl -I "http://127.0.0.1:8787/api/public/status-card.png?period=7d"
 ```
 
-如果 Wrangler 反复下载浏览器，或本地 Browser Run 启动失败，通常是
+如果 Wrangler 反复下载浏览器，或本地 Browser Rendering 启动失败，通常是
 Wrangler 的 Chrome for Testing 缓存损坏。可以先验证缓存里的浏览器：
 
 ```bash
-"$HOME/Library/Caches/.wrangler/chrome/mac_arm-126.0.6478.182/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" --version
+find "$HOME/Library/Caches/.wrangler/chrome" \
+  -path "*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" \
+  -print -quit
 ```
 
+然后用输出路径执行 `--version`，确认浏览器二进制能正常启动。
 若出现 `segment '__LINKEDIT' load command content extends beyond end of file`
 等二进制损坏错误，删除对应版本缓存后重新启动 `pnpm dev`，让 Wrangler
-重新下载；需要代理时使用本机 `127.0.0.1:7890`。
+重新下载。需要代理时，按本机代理地址设置环境变量，例如：
+
+```bash
+HTTPS_PROXY=http://127.0.0.1:7890 \
+HTTP_PROXY=http://127.0.0.1:7890 \
+ALL_PROXY=socks5://127.0.0.1:7890 \
+pnpm dev
+```
 
 ### 嵌入示例
 
