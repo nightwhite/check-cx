@@ -78,7 +78,10 @@ curl -I "http://127.0.0.1:8787/api/public/status-card.png?period=7d"
 ```
 
 如果 Wrangler 反复下载浏览器，或本地 Browser Rendering 启动失败，通常是
-Wrangler 的 Chrome for Testing 缓存损坏。可以先验证缓存里的浏览器：
+Wrangler 的 Chrome for Testing 缓存损坏。先从 Wrangler 日志确认正在使用的
+Chrome for Testing 缓存目录，再验证缓存里的浏览器二进制。
+
+macOS 上可用类似命令定位浏览器；其他系统需要替换为对应的 Wrangler 缓存目录：
 
 ```bash
 find "$HOME/Library/Caches/.wrangler/chrome" \
