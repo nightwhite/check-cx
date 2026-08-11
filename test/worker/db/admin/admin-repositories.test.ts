@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { encryptProviderKey } from "../../../../src/worker/crypto/provider-key";
 import {
+  createAdminChannelRepository,
   createAdminConfigRepository,
   createAdminGroupRepository,
   createAdminModelRepository,
@@ -154,6 +155,16 @@ describe("admin repositories", () => {
       templateId: null,
       nowMs: 100,
     });
+    await createAdminChannelRepository(db).create({
+      id: "channel-1",
+      name: "OpenAI Official",
+      logoUrl: null,
+      websiteUrl: null,
+      statusPageUrl: null,
+      sortOrder: 0,
+      enabled: true,
+      nowMs: 105,
+    });
     const configs = createAdminConfigRepository(db);
     const encrypted = await encryptProviderKey("sk-test", encryptionKey);
 
@@ -162,11 +173,14 @@ describe("admin repositories", () => {
       name: "OpenAI primary",
       type: "openai",
       modelId: "model-1",
+      channelId: "channel-1",
       endpoint: "https://api.openai.com/v1/chat/completions",
       encryptedKey: encrypted,
       enabled: true,
       isMaintenance: false,
       groupName: "core",
+      checkIntervalSeconds: null,
+      region: null,
       nowMs: 110,
     });
 
@@ -184,10 +198,13 @@ describe("admin repositories", () => {
       name: "OpenAI backup",
       type: "openai",
       modelId: "model-1",
+      channelId: "channel-1",
       endpoint: "https://example.com/v1/chat/completions",
       enabled: false,
       isMaintenance: true,
       groupName: null,
+      checkIntervalSeconds: 120,
+      region: "us-east-1",
       nowMs: 200,
     });
 

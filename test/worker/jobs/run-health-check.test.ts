@@ -4,6 +4,7 @@ import {
   runHealthCheckJob,
   shouldPruneCheckHistory,
 } from "../../../src/worker/jobs/run-health-check";
+import { encryptProviderKey } from "../../../src/worker/crypto/provider-key";
 import type { JobLockExecutor, JobLockStatementLike } from "../../../src/worker/jobs/job-lock";
 
 interface LockRow {
@@ -25,6 +26,29 @@ class FakeStatement implements JobLockStatementLike {
   }
 
   async first<T>() {
+    if (this.query.includes("FROM check_latest")) {
+      return {
+        config_id: "config-1",
+        status: "operational",
+      } as T;
+    }
+    if (this.query.includes("FROM site_settings")) {
+      return {
+        site_name: "AI Status",
+        public_origin: "https://status.example.com",
+        notification_cooldown_seconds: 300,
+      } as T;
+    }
+    if (this.query.includes("FROM notification_settings")) {
+      return {
+        enabled: 1,
+        lark_webhook_ciphertext: this.db.notificationWebhookCiphertext,
+        lark_webhook_nonce: this.db.notificationWebhookNonce,
+        notify_degraded: 1,
+        notify_failed: 1,
+        notify_recovered: 1,
+      } as T;
+    }
     return null as T | null;
   }
 
@@ -79,6 +103,12 @@ class FakeStatement implements JobLockStatementLike {
     }
 
     if (this.query.includes("INSERT INTO dashboard_snapshots")) {
+      this.db.dashboardSnapshotWrites++;
+      return { meta: { changes: 1 } };
+    }
+
+    if (this.query.includes("INSERT INTO notification_events")) {
+      this.db.notificationEvents++;
       return { meta: { changes: 1 } };
     }
 
@@ -106,6 +136,10 @@ class FakeD1 implements JobLockExecutor {
   failRecordRun = false;
   readonly batchSizes: number[] = [];
   readonly batchQueries: string[] = [];
+  dashboardSnapshotWrites = 0;
+  notificationEvents = 0;
+  notificationWebhookCiphertext: string | null = null;
+  notificationWebhookNonce: string | null = null;
 
   prepare(query: string) {
     return new FakeStatement(this, query);
@@ -136,6 +170,12 @@ describe("runHealthCheckJob", () => {
 
   it("releases the cron lock after a successful run", async () => {
     const db = new FakeD1();
+    const encryptedWebhook = await encryptProviderKey(
+      "https://open.feishu.cn/open-apis/bot/v2/hook/test",
+      "1234567890123456"
+    );
+    db.notificationWebhookCiphertext = encryptedWebhook.ciphertext;
+    db.notificationWebhookNonce = encryptedWebhook.nonce;
     const nowValues = [1_000, 2_000];
     const env = {
       DB: db,
@@ -156,7 +196,26 @@ describe("runHealthCheckJob", () => {
     });
 
     expect(db.jobRuns).toBe(1);
+    expect(db.dashboardSnapshotWrites).toBe(0);
     expect(db.locks.get("health-check")?.locked_until_ms).toBe(2_000);
+  });
+
+  it("does not overwrite dashboard snapshots when no configs are due", async () => {
+    const db = new FakeD1();
+    const env = {
+      DB: db,
+      ASSETS: { fetch: async () => new Response("asset") },
+      CONFIG_ENCRYPTION_KEY: "1234567890123456",
+    } as unknown as Env;
+
+    await runHealthCheckJob(env, Date.parse("2026-05-03T01:01:00.000Z"), {
+      ownerId: "owner-1",
+      loadConfigs: async () => [],
+      writeOfficialStatuses: async () => undefined,
+      now: () => 1_000,
+    });
+
+    expect(db.dashboardSnapshotWrites).toBe(0);
   });
 
   it("releases the cron lock when recording a successful run fails", async () => {
@@ -248,5 +307,54 @@ describe("runHealthCheckJob", () => {
     expect(officialWriter).toHaveBeenCalledOnce();
     expect(db.lastJobRunFinishedAtMs).toBe(3_000);
     expect(db.locks.get("health-check")?.locked_until_ms).toBe(3_000);
+  });
+
+  it("records notification event attempts after persisting changed results", async () => {
+    const db = new FakeD1();
+    const encryptedWebhook = await encryptProviderKey(
+      "https://open.feishu.cn/open-apis/bot/v2/hook/test",
+      "1234567890123456"
+    );
+    db.notificationWebhookCiphertext = encryptedWebhook.ciphertext;
+    db.notificationWebhookNonce = encryptedWebhook.nonce;
+    const env = {
+      DB: db,
+      ASSETS: { fetch: async () => new Response("asset") },
+      CONFIG_ENCRYPTION_KEY: "1234567890123456",
+    } as unknown as Env;
+
+    const jobResult = await runHealthCheckJob(env, Date.parse("2026-05-03T01:01:00.000Z"), {
+      ownerId: "owner-1",
+      loadConfigs: async () => [
+        {
+          id: "config-1",
+          name: "OpenAI",
+          type: "openai",
+          endpoint: "https://api.openai.com/v1/chat/completions",
+          model: "gpt-4o-mini",
+          apiKey: "sk-test",
+          isMaintenance: false,
+          channelName: "OpenAI Official",
+        },
+      ],
+      runCheck: async () => ({
+        id: "config-1",
+        name: "OpenAI",
+        type: "openai",
+        endpoint: "https://api.openai.com/v1/chat/completions",
+        model: "gpt-4o-mini",
+        status: "degraded",
+        latencyMs: 900,
+        pingLatencyMs: 10,
+        checkedAt: "2026-05-03T01:01:00.000Z",
+        message: "slow",
+        channelName: "OpenAI Official",
+      }),
+      writeOfficialStatuses: async () => undefined,
+      now: () => 1_000,
+    });
+
+    expect(jobResult.status).toBe("success");
+    expect(db.notificationEvents).toBe(1);
   });
 });

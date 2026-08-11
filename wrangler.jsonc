@@ -14,13 +14,14 @@
     "binding": "BROWSER"
   },
   "vars": {
-    "ADMIN_PATH": "/admin"
+    "ADMIN_PATH": "/admin",
+    "PUBLIC_ORIGIN": "https://status.su8.codes"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "check-cx",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "62b6f2c8-8a71-4156-95f2-153be7585abf",
       "migrations_dir": "drizzle/migrations"
     }
   ],

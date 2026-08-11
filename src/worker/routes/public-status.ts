@@ -28,7 +28,44 @@ interface SnapshotAvailabilityStat {
   availabilityPct: number | null;
 }
 
+interface SnapshotSite {
+  siteName: string;
+  statusTitle: string;
+  description: string | null;
+  logoUrl: string | null;
+  faviconUrl?: string | null;
+  publicOrigin: string | null;
+}
+
+interface SnapshotChannelModel {
+  id: string;
+  name: string;
+  type: string;
+  model: string | null;
+  status: string;
+  latencyMs: number | null;
+  checkedAt: string | null;
+  message: string | null;
+  availability?: Record<string, number>;
+  history?: Array<{
+    status: string;
+    latencyMs: number | null;
+    checkedAt: string | null;
+  }>;
+}
+
+interface SnapshotChannel {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  websiteUrl: string | null;
+  statusPageUrl: string | null;
+  models: SnapshotChannelModel[];
+}
+
 export interface DashboardSnapshotPayload {
+  site?: SnapshotSite;
+  channels?: SnapshotChannel[];
   providerTimelines?: SnapshotProvider[];
   lastUpdated?: string | null;
   availabilityStats?: Record<string, SnapshotAvailabilityStat[]>;
@@ -36,24 +73,40 @@ export interface DashboardSnapshotPayload {
 }
 
 export interface PublicStatusPayload {
-  version: 1;
+  version: 2;
   generatedAt: string | null;
   period: TrendPeriod;
   overallStatus: PublicOverallStatus;
+  site: SnapshotSite | null;
   summary: Record<PublicProviderStatus, number> & { total: number };
-  providers: Array<{
-    id: string;
-    name: string;
-    type: string;
-    model: string | null;
-    group: string | null;
+  channels: PublicStatusChannel[];
+}
+
+type PublicStatusModel = {
+  id: string;
+  name: string;
+  type: string;
+  model: string | null;
+  status: PublicProviderStatus;
+  latencyMs: number | null;
+  checkedAt: string | null;
+  message: string | null;
+  availability: Record<string, number>;
+  history: Array<{
     status: PublicProviderStatus;
     latencyMs: number | null;
     checkedAt: string | null;
-    message: string | null;
-    availability: Record<string, number>;
   }>;
-}
+};
+
+type PublicStatusChannel = {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  websiteUrl: string | null;
+  statusPageUrl: string | null;
+  models: PublicStatusModel[];
+};
 
 const PROVIDER_GROUP_LABEL: Record<string, string> = {
   openai: "OpenAI",
@@ -103,17 +156,21 @@ function buildAvailability(
   return availability;
 }
 
-function summarizeProviders(providers: PublicStatusPayload["providers"]) {
+function flattenModels(channels: PublicStatusChannel[]) {
+  return channels.flatMap((channel) => channel.models);
+}
+
+function summarizeModels(models: PublicStatusModel[]) {
   const summary = {
-    total: providers.length,
+    total: models.length,
     operational: 0,
     degraded: 0,
     failed: 0,
     maintenance: 0,
     unknown: 0,
   };
-  for (const provider of providers) {
-    summary[provider.status] += 1;
+  for (const model of models) {
+    summary[model.status] += 1;
   }
   return summary;
 }
@@ -139,34 +196,81 @@ function getOverallStatus(
   return "operational";
 }
 
-export function buildPublicStatusPayload(
-  snapshot: DashboardSnapshotPayload | null,
-  period: TrendPeriod
-): PublicStatusPayload {
-  const providers = (snapshot?.providerTimelines ?? []).map((timeline) => {
+function buildChannelsFromSnapshot(snapshot: DashboardSnapshotPayload | null) {
+  return (snapshot?.channels ?? []).map((channel) => ({
+    id: channel.id,
+    name: channel.name,
+    logoUrl: channel.logoUrl ?? null,
+    websiteUrl: channel.websiteUrl ?? null,
+    statusPageUrl: channel.statusPageUrl ?? null,
+    models: channel.models.map((model) => ({
+      id: model.id,
+      name: model.name,
+      type: model.type,
+      model: model.model ?? null,
+      status: toPublicStatus(model.status),
+      latencyMs: typeof model.latencyMs === "number" ? model.latencyMs : null,
+      checkedAt: toIsoDate(model.checkedAt),
+      message: sanitizeText(model.message),
+      availability: model.availability ?? {},
+      history: (model.history ?? []).map((item) => ({
+        status: toPublicStatus(item.status),
+        latencyMs: typeof item.latencyMs === "number" ? item.latencyMs : null,
+        checkedAt: toIsoDate(item.checkedAt),
+      })),
+    })),
+  }));
+}
+
+function buildChannelsFromLegacySnapshot(snapshot: DashboardSnapshotPayload | null) {
+  const grouped = new Map<string, PublicStatusChannel>();
+  for (const timeline of snapshot?.providerTimelines ?? []) {
     const latest = timeline.latest ?? {};
     const id = latest.id ?? timeline.id;
-    return {
+    const channelName = latest.type ? getProviderGroup(latest.type) : "Unknown";
+    const channelId = `legacy:${channelName}`;
+    const channel = grouped.get(channelId) ?? {
+      id: channelId,
+      name: channelName,
+      logoUrl: null,
+      websiteUrl: null,
+      statusPageUrl: null,
+      models: [],
+    };
+    channel.models.push({
       id,
       name: latest.name ?? id,
       type: latest.type ?? "unknown",
       model: latest.model ?? null,
-      group: latest.type ? getProviderGroup(latest.type) : null,
       status: toPublicStatus(latest.status),
       latencyMs: typeof latest.latencyMs === "number" ? latest.latencyMs : null,
       checkedAt: toIsoDate(latest.checkedAt),
       message: sanitizeText(latest.message),
       availability: buildAvailability(snapshot?.availabilityStats?.[id]),
-    };
-  });
-  const summary = summarizeProviders(providers);
+      history: [],
+    });
+    grouped.set(channelId, channel);
+  }
+  return [...grouped.values()];
+}
+
+export function buildPublicStatusPayload(
+  snapshot: DashboardSnapshotPayload | null,
+  period: TrendPeriod
+): PublicStatusPayload {
+  const channels =
+    snapshot?.channels && snapshot.channels.length > 0
+      ? buildChannelsFromSnapshot(snapshot)
+      : buildChannelsFromLegacySnapshot(snapshot);
+  const summary = summarizeModels(flattenModels(channels));
 
   return {
-    version: 1,
+    version: 2,
     generatedAt: toIsoDate(snapshot?.lastUpdated ?? snapshot?.generatedAt),
     period,
     overallStatus: getOverallStatus(summary),
+    site: snapshot?.site ?? null,
     summary,
-    providers,
+    channels,
   };
 }

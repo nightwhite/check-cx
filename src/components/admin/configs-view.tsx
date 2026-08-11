@@ -5,15 +5,15 @@ import { Button } from "../../../components/ui/button";
 import {
   createAdminConfig,
   deleteAdminConfig,
+  listAdminChannels,
   listAdminConfigs,
-  listAdminGroups,
   listAdminModels,
   replaceAdminConfigSecret,
   updateAdminConfig,
 } from "./admin-api";
 import type {
   AdminConfigRecord,
-  AdminGroupRecord,
+  AdminChannelRecord,
   AdminModelRecord,
 } from "./admin-types";
 import { ConfigForm, ConfigSecretDialog } from "./config-form";
@@ -25,7 +25,7 @@ import { AdminViewLayout } from "./view-layout";
 export function ConfigsView() {
   const [search, setSearch] = React.useState("");
   const [models, setModels] = React.useState<AdminModelRecord[]>([]);
-  const [groups, setGroups] = React.useState<AdminGroupRecord[]>([]);
+  const [channels, setChannels] = React.useState<AdminChannelRecord[]>([]);
   const [editing, setEditing] = React.useState<AdminConfigRecord | null>(null);
   const [secretRecord, setSecretRecord] = React.useState<AdminConfigRecord | null>(
     null
@@ -43,16 +43,19 @@ export function ConfigsView() {
 
   React.useEffect(() => {
     setCatalogError(null);
-    Promise.all([listAdminModels(), listAdminGroups()])
-      .then(([nextModels, nextGroups]) => {
+    Promise.all([listAdminModels(), listAdminChannels()])
+      .then(([nextModels, nextChannels]) => {
         setModels(nextModels);
-        setGroups(nextGroups);
+        setChannels(nextChannels);
       })
       .catch((loadError) => setCatalogError(errorMessage(loadError)));
   }, []);
 
   const filtered = records.filter((record) =>
-    includesText([record.name, record.type, record.model, record.groupName], search)
+    includesText(
+      [record.name, record.type, record.model, record.channelName, record.region],
+      search
+    )
   );
 
   async function save(payload: Record<string, unknown>) {
@@ -116,9 +119,9 @@ export function ConfigsView() {
   return (
     <AdminViewLayout
       title="Provider 配置"
-      description="维护检测实例、端点和密钥状态"
-      actionLabel="新增配置"
-      searchLabel="搜索配置"
+      description="维护渠道、模型、端点和检查频次"
+      actionLabel="新增监控项"
+      searchLabel="搜索监控项"
       searchValue={search}
       onSearchChange={setSearch}
       onCreate={() => {
@@ -136,8 +139,8 @@ export function ConfigsView() {
         <DataTable
           records={filtered}
           getRowKey={(record) => record.id}
-          emptyTitle="还没有 Provider 配置"
-          emptyActionLabel="新增配置"
+          emptyTitle="还没有监控项"
+          emptyActionLabel="新增监控项"
           onCreate={() => {
             setEditing(null);
             setFormOpen(true);
@@ -157,14 +160,33 @@ export function ConfigsView() {
             },
             { key: "model", header: "模型", cell: (record) => record.model },
             {
+              key: "apiFormat",
+              header: "API",
+              cell: (record) =>
+                record.apiFormat === "responses" ? "Responses" : "Chat",
+            },
+            {
+              key: "channel",
+              header: "渠道",
+              cell: (record) => record.channelName ?? "未配置",
+            },
+            {
+              key: "frequency",
+              header: "频次",
+              cell: (record) =>
+                record.checkIntervalSeconds
+                  ? `${record.checkIntervalSeconds} 秒`
+                  : "默认",
+            },
+            {
+              key: "region",
+              header: "Region",
+              cell: (record) => record.region ?? "未配置",
+            },
+            {
               key: "type",
               header: "Provider",
               cell: (record) => <Badge variant="secondary">{record.type}</Badge>,
-            },
-            {
-              key: "group",
-              header: "分组",
-              cell: (record) => record.groupName ?? "未分组",
             },
             {
               key: "key",
@@ -232,7 +254,7 @@ export function ConfigsView() {
         open={formOpen}
         record={editing}
         models={models}
-        groups={groups}
+        channels={channels}
         saving={saving}
         serverError={formError}
         onOpenChange={setFormOpen}

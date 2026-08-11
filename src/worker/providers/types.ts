@@ -1,4 +1,5 @@
 export type WorkerProviderType = "openai" | "gemini" | "anthropic";
+export type WorkerApiFormat = "chat_completions" | "responses";
 
 export type WorkerHealthStatus =
   | "operational"
@@ -13,12 +14,20 @@ export interface WorkerProviderConfig {
   name: string;
   type: WorkerProviderType;
   endpoint: string;
+  apiFormat?: WorkerApiFormat;
   model: string;
   apiKey: string;
   isMaintenance: boolean;
   requestHeaders?: Record<string, string> | null;
   metadata?: Record<string, unknown> | null;
   groupName?: string | null;
+  channelId?: string | null;
+  channelName?: string | null;
+  channelLogoUrl?: string | null;
+  checkIntervalSeconds?: number | null;
+  effectiveCheckIntervalSeconds?: number;
+  lastCheckedAtMs?: number | null;
+  region?: string | null;
 }
 
 export interface WorkerCheckResult {
@@ -40,4 +49,8 @@ export interface WorkerCheckResult {
     affectedComponents?: string[];
   };
   groupName?: string | null;
+  channelId?: string | null;
+  channelName?: string | null;
+  channelLogoUrl?: string | null;
+  region?: string | null;
 }

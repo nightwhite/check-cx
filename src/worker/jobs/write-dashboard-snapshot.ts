@@ -27,6 +27,34 @@ interface GroupInfoRow {
   tags: string | null;
 }
 
+interface SiteSettingsRow {
+  site_name: string;
+  status_title: string;
+  description: string | null;
+  logo_url: string | null;
+  favicon_url: string | null;
+  public_origin: string | null;
+}
+
+interface SiteSummary {
+  siteName: string;
+  statusTitle: string;
+  description: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  publicOrigin: string | null;
+}
+
+interface ChannelRow {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  website_url: string | null;
+  status_page_url: string | null;
+  sort_order: number;
+  enabled: number;
+}
+
 interface CheckHistoryRow {
   config_id: string;
   name: string;
@@ -34,6 +62,10 @@ interface CheckHistoryRow {
   endpoint: string;
   model: string;
   group_name: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  channel_logo_url: string | null;
+  region: string | null;
   status: WorkerCheckResult["status"];
   latency_ms: number | null;
   ping_latency_ms: number | null;
@@ -145,7 +177,9 @@ function buildPayload(
   historyByConfig: Map<string, WorkerCheckResult[]>,
   groupInfos: ReturnType<typeof toGroupInfoSummaries>,
   availabilityStats: Record<string, AvailabilityStat[]>,
-  officialStatusByType: Map<WorkerCheckResult["type"], OfficialStatusResult>
+  officialStatusByType: Map<WorkerCheckResult["type"], OfficialStatusResult>,
+  site: SiteSummary | null,
+  channels: ReturnType<typeof buildChannels>
 ) {
   const providerTimelines = results.map((result) => ({
     id: result.id,
@@ -163,6 +197,8 @@ function buildPayload(
       : null;
 
   return {
+    site,
+    channels,
     providerTimelines,
     groupInfos,
     lastUpdated,
@@ -193,7 +229,9 @@ function buildGroupPayload(
     historyByConfig,
     [],
     availabilityStats,
-    officialStatusByType
+    officialStatusByType,
+    null,
+    []
   );
   return {
     groupName,
@@ -216,6 +254,39 @@ async function loadGroupInfoMap(db: DashboardSnapshotExecutor) {
     .prepare("SELECT group_name, website_url, tags FROM group_info")
     .all<GroupInfoRow>();
   return new Map((result.results ?? []).map((row) => [row.group_name, row]));
+}
+
+async function loadSiteSettings(db: DashboardSnapshotExecutor) {
+  const row = await db
+    .prepare(
+      `SELECT site_name, status_title, description, logo_url, favicon_url, public_origin
+       FROM site_settings
+       WHERE id = 'default'`
+    )
+    .first<SiteSettingsRow>();
+  if (!row) {
+    return null;
+  }
+  return {
+    siteName: row.site_name,
+    statusTitle: row.status_title,
+    description: row.description,
+    logoUrl: row.logo_url,
+    faviconUrl: row.favicon_url,
+    publicOrigin: row.public_origin,
+  };
+}
+
+async function loadChannels(db: DashboardSnapshotExecutor) {
+  const rows = await db
+    .prepare(
+      `SELECT id, name, logo_url, website_url, status_page_url, sort_order, enabled
+       FROM channels
+       WHERE enabled = 1
+       ORDER BY sort_order ASC, name ASC`
+    )
+    .all<ChannelRow>();
+  return rows.results ?? [];
 }
 
 function buildAvailabilityStats(rows: AvailabilityRollupRow[]) {
@@ -347,6 +418,10 @@ function toHistoryResult(row: CheckHistoryRow): WorkerCheckResult {
     message: row.message ?? "",
     logMessage: row.log_message ?? undefined,
     groupName: row.group_name,
+    channelId: row.channel_id,
+    channelName: row.channel_name,
+    channelLogoUrl: row.channel_logo_url,
+    region: row.region,
   };
 }
 
@@ -375,6 +450,10 @@ async function loadHistoryByConfig(
            c.endpoint,
            m.model,
            c.group_name,
+           c.channel_id,
+           ch.name AS channel_name,
+           ch.logo_url AS channel_logo_url,
+           c.region,
            h.status,
            h.latency_ms,
            h.ping_latency_ms,
@@ -384,6 +463,7 @@ async function loadHistoryByConfig(
          FROM check_history h
          JOIN check_configs c ON c.id = h.config_id
          JOIN check_models m ON m.id = c.model_id
+         LEFT JOIN channels ch ON ch.id = c.channel_id
          JOIN (
            SELECT id
            FROM (
@@ -436,6 +516,93 @@ function filterHistoryByPeriod(
   return filtered;
 }
 
+function buildAvailabilityMap(stats: AvailabilityStat[] | undefined) {
+  const availability: Record<string, number> = {};
+  for (const stat of stats ?? []) {
+    if (typeof stat.availabilityPct === "number") {
+      availability[stat.period] = stat.availabilityPct;
+    }
+  }
+  return availability;
+}
+
+function buildChannels(
+  results: WorkerCheckResult[],
+  channelRows: ChannelRow[],
+  historyByConfig: Map<string, WorkerCheckResult[]>,
+  availabilityStats: Record<string, AvailabilityStat[]>,
+  officialStatusByType: Map<WorkerCheckResult["type"], OfficialStatusResult>
+) {
+  const channelById = new Map(
+    channelRows.map((channel) => [
+      channel.id,
+      {
+        id: channel.id,
+        name: channel.name,
+        logoUrl: channel.logo_url,
+        websiteUrl: channel.website_url,
+        statusPageUrl: channel.status_page_url,
+        models: [] as Array<{
+          id: string;
+          name: string;
+          type: WorkerCheckResult["type"];
+          model: string;
+          status: WorkerCheckResult["status"];
+          latencyMs: number | null;
+          checkedAt: string;
+          message: string;
+          availability: Record<string, number>;
+          history: Array<{
+            status: WorkerCheckResult["status"];
+            latencyMs: number | null;
+            checkedAt: string;
+          }>;
+          officialStatus?: OfficialStatusResult;
+        }>,
+      },
+    ])
+  );
+
+  for (const result of results) {
+    if (!result.channelId || !channelById.has(result.channelId)) {
+      continue;
+    }
+    const channel = channelById.get(result.channelId);
+    if (!channel) {
+      continue;
+    }
+    const timeline = mergeTimelineItems(result, historyByConfig).map((item) =>
+      withOfficialStatus(item, officialStatusByType)
+    );
+    channel.models.push({
+      id: result.id,
+      name: result.name,
+      type: result.type,
+      model: result.model,
+      status: result.status,
+      latencyMs: result.latencyMs,
+      checkedAt: result.checkedAt,
+      message: result.message,
+      officialStatus: officialStatusByType.get(result.type),
+      availability: buildAvailabilityMap(availabilityStats[result.id]),
+      history: timeline.slice(0, HISTORY_LIMIT_PER_CONFIG).map((item) => ({
+        status: item.status,
+        latencyMs: item.latencyMs,
+        checkedAt: item.checkedAt,
+      })),
+    });
+  }
+
+  return [...channelById.values()]
+    .map((channel) => ({
+      ...channel,
+      models: channel.models.sort((left, right) =>
+        left.name.localeCompare(right.name)
+      ),
+    }))
+    .filter((channel) => channel.models.length > 0);
+}
+
 export async function writeDashboardSnapshot(
   db: DashboardSnapshotExecutor,
   results: WorkerCheckResult[],
@@ -449,6 +616,8 @@ export async function writeDashboardSnapshot(
   const groupInfos = toGroupInfoSummaries(groupInfoMap);
   const availabilityStats = await loadAvailabilityStats(db, results, nowMs);
   const officialStatusByType = await loadOfficialStatuses(db);
+  const site = await loadSiteSettings(db);
+  const channelRows = await loadChannels(db);
 
   for (const period of PERIODS) {
     const periodHistoryByConfig = filterHistoryByPeriod(
@@ -457,6 +626,13 @@ export async function writeDashboardSnapshot(
       nowMs
     );
     historyByPeriod.set(period, periodHistoryByConfig);
+    const channels = buildChannels(
+      results,
+      channelRows,
+      periodHistoryByConfig,
+      availabilityStats,
+      officialStatusByType
+    );
     const payload = buildPayload(
       results,
       period,
@@ -464,7 +640,9 @@ export async function writeDashboardSnapshot(
       periodHistoryByConfig,
       groupInfos,
       availabilityStats,
-      officialStatusByType
+      officialStatusByType,
+      site,
+      channels
     );
     const payloadJson = JSON.stringify(payload);
     records.push({

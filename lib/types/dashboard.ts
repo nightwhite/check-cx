@@ -21,6 +21,44 @@ export interface GroupInfoSummary {
   tags: string;
 }
 
+export interface DashboardSite {
+  siteName: string;
+  statusTitle: string;
+  description: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  publicOrigin: string | null;
+}
+
+export interface DashboardModelHistoryItem {
+  status: CheckResult["status"];
+  latencyMs: number | null;
+  checkedAt: string;
+}
+
+export interface DashboardChannelModel {
+  id: string;
+  name: string;
+  type: CheckResult["type"];
+  model: string;
+  status: CheckResult["status"];
+  latencyMs: number | null;
+  checkedAt: string;
+  message: string;
+  availability: Record<string, number>;
+  history: DashboardModelHistoryItem[];
+  officialStatus?: CheckResult["officialStatus"];
+}
+
+export interface DashboardChannel {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  websiteUrl: string | null;
+  statusPageUrl: string | null;
+  models: DashboardChannelModel[];
+}
+
 /**
  * 时间线项目（保持原始 ISO 时间，交给客户端格式化）
  */
@@ -50,6 +88,8 @@ export interface GroupedProviderTimelines {
  * Dashboard 完整数据
  */
 export interface DashboardData {
+  site: DashboardSite | null;
+  channels: DashboardChannel[];
   providerTimelines: ProviderTimeline[];
   groupInfos: GroupInfoSummary[];
   lastUpdated: string | null;

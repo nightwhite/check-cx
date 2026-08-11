@@ -1,10 +1,13 @@
 import type {
   AdminConfigRecord,
+  AdminChannelRecord,
   AdminGroupRecord,
   AdminModelRecord,
   AdminNotificationRecord,
+  AdminNotificationSettingsRecord,
   AdminRuntimeStatus,
   AdminSessionResponse,
+  AdminSiteSettingsRecord,
   AdminSummary,
   AdminTemplateRecord,
 } from "./admin-types";
@@ -80,6 +83,35 @@ export async function getAdminSummary(): Promise<AdminSummary | null> {
 
 export async function listAdminConfigs(): Promise<AdminConfigRecord[]> {
   return requestJson<AdminConfigRecord[]>("/api/admin/configs");
+}
+
+export async function listAdminChannels(): Promise<AdminChannelRecord[]> {
+  return requestJson<AdminChannelRecord[]>("/api/admin/channels");
+}
+
+export async function createAdminChannel(
+  payload: Record<string, unknown>
+): Promise<AdminChannelRecord> {
+  return requestJson<AdminChannelRecord>(
+    "/api/admin/channels",
+    jsonInit("POST", payload)
+  );
+}
+
+export async function updateAdminChannel(
+  id: string,
+  payload: Record<string, unknown>
+): Promise<AdminChannelRecord> {
+  return requestJson<AdminChannelRecord>(
+    `/api/admin/channels/${id}`,
+    jsonInit("PUT", payload)
+  );
+}
+
+export async function deleteAdminChannel(id: string): Promise<void> {
+  await requestJson<{ ok: boolean }>(`/api/admin/channels/${id}`, {
+    method: "DELETE",
+  });
 }
 
 export async function createAdminConfig(
@@ -210,6 +242,21 @@ export async function listAdminNotifications(): Promise<
   return requestJson<AdminNotificationRecord[]>("/api/admin/notifications");
 }
 
+export async function getAdminNotificationSettings(): Promise<AdminNotificationSettingsRecord> {
+  return requestJson<AdminNotificationSettingsRecord>(
+    "/api/admin/notification-settings"
+  );
+}
+
+export async function updateAdminNotificationSettings(
+  payload: Record<string, unknown>
+): Promise<AdminNotificationSettingsRecord> {
+  return requestJson<AdminNotificationSettingsRecord>(
+    "/api/admin/notification-settings",
+    jsonInit("PUT", payload)
+  );
+}
+
 export async function createAdminNotification(
   payload: Record<string, unknown>
 ): Promise<AdminNotificationRecord> {
@@ -237,4 +284,17 @@ export async function deleteAdminNotification(id: string): Promise<void> {
 
 export async function getAdminRuntime(): Promise<AdminRuntimeStatus> {
   return requestJson<AdminRuntimeStatus>("/api/admin/runtime");
+}
+
+export async function getAdminSiteSettings(): Promise<AdminSiteSettingsRecord> {
+  return requestJson<AdminSiteSettingsRecord>("/api/admin/site-settings");
+}
+
+export async function updateAdminSiteSettings(
+  payload: Record<string, unknown>
+): Promise<AdminSiteSettingsRecord> {
+  return requestJson<AdminSiteSettingsRecord>(
+    "/api/admin/site-settings",
+    jsonInit("PUT", payload)
+  );
 }

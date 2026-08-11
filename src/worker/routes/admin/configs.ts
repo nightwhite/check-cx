@@ -7,7 +7,10 @@ import {
   AdminConflictError,
   AdminNotFoundError,
   AdminUnavailableError,
+  AdminValidationError,
+  apiFormat,
   optionalBoolean,
+  optionalInteger,
   optionalString,
   providerType,
   readJsonObject,
@@ -15,14 +18,34 @@ import {
 } from "./validation";
 
 function baseConfigPayload(body: Record<string, unknown>, now = nowMs()) {
+  const checkIntervalSeconds = optionalInteger(
+    body,
+    "checkIntervalSeconds",
+    "检查频次覆盖"
+  );
+  if (
+    checkIntervalSeconds !== null &&
+    (checkIntervalSeconds < 15 || checkIntervalSeconds > 3600)
+  ) {
+    throw new AdminValidationError("检查频次覆盖必须在 15 到 3600 秒之间");
+  }
+  const region = optionalString(body, "region");
+  if (region && region.length > 80) {
+    throw new AdminValidationError("Region / 备注不能超过 80 个字符");
+  }
+
   return {
     name: requiredString(body, "name", "配置名称"),
     type: providerType(requiredString(body, "type", "Provider 类型")),
     modelId: requiredString(body, "modelId", "模型 ID"),
+    channelId: requiredString(body, "channelId", "渠道 ID"),
     endpoint: requiredString(body, "endpoint", "API 端点"),
+    apiFormat: apiFormat(optionalString(body, "apiFormat") ?? "chat_completions"),
     enabled: optionalBoolean(body, "enabled", true),
     isMaintenance: optionalBoolean(body, "isMaintenance", false),
-    groupName: optionalString(body, "groupName"),
+    groupName: null,
+    checkIntervalSeconds,
+    region,
     nowMs: now,
   };
 }
@@ -45,6 +68,9 @@ async function validateConfigModelType(
   }
   if (model.type !== input.type) {
     throw new AdminConflictError("配置类型必须与模型类型一致");
+  }
+  if (!(await repository.channelExists(input.channelId))) {
+    throw new AdminNotFoundError("渠道不存在");
   }
 }
 

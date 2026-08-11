@@ -16,14 +16,18 @@ export interface AdminSummary {
 
 export type AdminView =
   | "overview"
+  | "site-settings"
+  | "channels"
   | "configs"
   | "models"
   | "templates"
   | "groups"
   | "notifications"
+  | "notification-settings"
   | "runtime";
 
 export type AdminProviderType = "openai" | "gemini" | "anthropic";
+export type AdminApiFormat = "chat_completions" | "responses";
 export type AdminNotificationLevel = "info" | "warning" | "error";
 
 export interface AdminTemplateRecord {
@@ -54,10 +58,16 @@ export interface AdminConfigRecord {
   model: string;
   templateId: string | null;
   templateName: string | null;
+  channelId: string | null;
+  channelName: string | null;
+  channelLogoUrl: string | null;
   endpoint: string;
+  apiFormat: AdminApiFormat;
   enabled: boolean;
   isMaintenance: boolean;
   groupName: string | null;
+  checkIntervalSeconds: number | null;
+  region: string | null;
   hasApiKey: boolean;
   createdAtMs: number;
   updatedAtMs: number;
@@ -78,6 +88,43 @@ export interface AdminNotificationRecord {
   level: AdminNotificationLevel;
   isActive: boolean;
   createdAtMs: number;
+}
+
+export interface AdminNotificationSettingsRecord {
+  id: "default";
+  enabled: boolean;
+  hasWebhookUrl: boolean;
+  notifyDegraded: boolean;
+  notifyFailed: boolean;
+  notifyRecovered: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface AdminSiteSettingsRecord {
+  id: "default";
+  siteName: string;
+  statusTitle: string;
+  description: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  publicOrigin: string | null;
+  defaultCheckIntervalSeconds: number;
+  notificationCooldownSeconds: number;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface AdminChannelRecord {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  websiteUrl: string | null;
+  statusPageUrl: string | null;
+  sortOrder: number;
+  enabled: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
 }
 
 export interface AdminRuntimeStatus {

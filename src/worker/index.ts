@@ -3,6 +3,10 @@ import { runHealthCheckJob } from "./jobs";
 
 const app = createWorkerApp();
 
+interface FaviconSettingsRow {
+  favicon_url: string | null;
+}
+
 function normalizeAdminPath(value: string | undefined): string {
   if (!value || value.trim().length === 0) {
     return "/admin";
@@ -20,14 +24,39 @@ function isAdminPath(pathname: string, adminPath: string): boolean {
 
 function adminShellRequest(request: Request): Request {
   const url = new URL(request.url);
-  url.pathname = "/admin/index.html";
+  url.pathname = "/admin/";
   url.search = "";
   return new Request(url, request);
+}
+
+async function configuredFaviconResponse(env: Env) {
+  const row = await env.DB.prepare(
+    "SELECT favicon_url FROM site_settings WHERE id = 'default'"
+  ).first<FaviconSettingsRow>();
+  if (!row?.favicon_url) {
+    return null;
+  }
+
+  const response = await fetch(row.favicon_url);
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "no-store");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/favicon.ico") {
+      const faviconResponse = await configuredFaviconResponse(env);
+      if (faviconResponse) {
+        return faviconResponse;
+      }
+    }
+
     if (url.pathname === "/group/SU8" || url.pathname === "/group/SU8/") {
       url.pathname = "/";
       url.search = "";

@@ -84,9 +84,10 @@ describe("AdminIsland", () => {
     await flush();
 
     expect(screen.getByRole("heading", { name: "概览" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Provider 配置" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "监控项" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "渠道" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "运行状态" })).not.toBeNull();
-    expect(screen.getByLabelText("Provider 配置: 2")).not.toBeNull();
+    expect(screen.getByLabelText("监控项: 2")).not.toBeNull();
   });
 
   it("returns to login when the session expires", async () => {

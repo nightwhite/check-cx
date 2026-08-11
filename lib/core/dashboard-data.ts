@@ -164,6 +164,8 @@ async function loadDashboardDataInternal(options?: {
     const availabilityStats = await getAvailabilityStats(configIds);
 
     const data: DashboardData = {
+      site: null,
+      channels: [],
       providerTimelines,
       groupInfos: groupInfoSummaries,
       lastUpdated,

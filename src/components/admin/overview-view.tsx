@@ -20,8 +20,8 @@ export function OverviewView({ summary }: OverviewViewProps) {
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Provider 配置" value={summary.configCount} />
-        <MetricCard label="启用配置" value={summary.enabledConfigCount} />
+        <MetricCard label="监控项" value={summary.configCount} />
+        <MetricCard label="启用监控项" value={summary.enabledConfigCount} />
         <MetricCard label="维护中" value={summary.maintenanceConfigCount} />
         <MetricCard label="模型" value={summary.modelCount} />
         <MetricCard label="请求模板" value={summary.templateCount} />

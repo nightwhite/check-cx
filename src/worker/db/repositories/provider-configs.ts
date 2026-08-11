@@ -15,11 +15,19 @@ interface ProviderConfigRow {
   name: string;
   type: string;
   endpoint: string;
+  api_format: WorkerProviderConfig["apiFormat"];
   api_key_ciphertext: string | null;
   api_key_nonce: string | null;
   api_key_version: number | null;
   is_maintenance: number;
   group_name: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  channel_logo_url: string | null;
+  check_interval_seconds: number | null;
+  effective_check_interval_seconds: number;
+  last_checked_at_ms: number | null;
+  region: string | null;
   model: string;
   request_header_json: string | null;
   metadata_json: string | null;
@@ -83,29 +91,53 @@ async function decryptApiKey(
 
 export async function loadEnabledProviderConfigs(
   db: D1AllExecutor,
-  encryptionKey: string
+  encryptionKey: string,
+  nowMs = Date.now()
 ): Promise<WorkerProviderConfig[]> {
   const rows = await db
     .prepare(
-      `SELECT
+      `WITH site AS (
+         SELECT default_check_interval_seconds
+         FROM site_settings
+         WHERE id = 'default'
+       )
+       SELECT
          c.id,
          c.name,
          c.type,
          c.endpoint,
+         c.api_format,
          c.api_key_ciphertext,
          c.api_key_nonce,
          c.api_key_version,
          c.is_maintenance,
          c.group_name,
+         c.channel_id,
+         ch.name AS channel_name,
+         ch.logo_url AS channel_logo_url,
+         c.check_interval_seconds,
+         COALESCE(c.check_interval_seconds, site.default_check_interval_seconds)
+           AS effective_check_interval_seconds,
+         c.last_checked_at_ms,
+         c.region,
          m.model,
          t.request_header_json,
          t.metadata_json
        FROM check_configs c
+       JOIN site
        JOIN check_models m ON m.id = c.model_id AND m.type = c.type
+       LEFT JOIN channels ch ON ch.id = c.channel_id
        LEFT JOIN check_request_templates t ON t.id = m.template_id AND t.type = c.type
        WHERE c.enabled = 1
+         AND (
+           c.last_checked_at_ms IS NULL
+           OR c.last_checked_at_ms <= ? - (
+             COALESCE(c.check_interval_seconds, site.default_check_interval_seconds) * 1000
+           )
+         )
        ORDER BY c.id`
     )
+    .bind(nowMs)
     .all<ProviderConfigRow>();
 
   return Promise.all(
@@ -114,12 +146,20 @@ export async function loadEnabledProviderConfigs(
       name: row.name,
       type: assertProviderType(row.type),
       endpoint: row.endpoint,
+      apiFormat: row.api_format,
       model: row.model,
       apiKey: await decryptApiKey(row, encryptionKey),
       isMaintenance: Boolean(row.is_maintenance),
       requestHeaders: parseHeaderRecord(row.request_header_json),
       metadata: parseJsonRecord(row.metadata_json),
       groupName: row.group_name,
+      channelId: row.channel_id,
+      channelName: row.channel_name,
+      channelLogoUrl: row.channel_logo_url,
+      checkIntervalSeconds: row.check_interval_seconds,
+      effectiveCheckIntervalSeconds: row.effective_check_interval_seconds,
+      lastCheckedAtMs: row.last_checked_at_ms,
+      region: row.region,
     }))
   );
 }

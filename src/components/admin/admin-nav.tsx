@@ -4,7 +4,9 @@ import {
   Gauge,
   Layers3,
   LayoutTemplate,
+  Settings,
   ServerCog,
+  SquareStack,
   Waypoints,
 } from "lucide-react";
 
@@ -17,11 +19,14 @@ const navItems: Array<{
   icon: typeof Gauge;
 }> = [
   { value: "overview", label: "概览", icon: Gauge },
-  { value: "configs", label: "Provider 配置", icon: ServerCog },
+  { value: "site-settings", label: "站点设置", icon: Settings },
+  { value: "channels", label: "渠道", icon: SquareStack },
+  { value: "configs", label: "监控项", icon: ServerCog },
   { value: "models", label: "模型", icon: Layers3 },
   { value: "templates", label: "请求模板", icon: LayoutTemplate },
   { value: "groups", label: "分组", icon: Boxes },
   { value: "notifications", label: "通知", icon: Bell },
+  { value: "notification-settings", label: "通知设置", icon: Bell },
   { value: "runtime", label: "运行状态", icon: Waypoints },
 ];
 

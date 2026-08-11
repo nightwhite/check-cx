@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import initSqlJs from "sql.js";
@@ -85,15 +85,19 @@ class SqlJsDatabaseAdapter implements DatabaseLike {
   }
 }
 
-const migrationPath = resolve(
+const migrationDirectory = resolve(
   process.cwd(),
-  "drizzle/migrations/0001_initial.sql"
+  "drizzle/migrations"
 );
 
 export async function createMigratedDatabase() {
   const SQL = await getSqlJs();
   const db = new SqlJsDatabaseAdapter(new SQL.Database());
   db.exec("PRAGMA foreign_keys = ON;");
-  db.exec(readFileSync(migrationPath, "utf8"));
+  for (const file of readdirSync(migrationDirectory)
+    .filter((item) => item.endsWith(".sql"))
+    .sort()) {
+    db.exec(readFileSync(resolve(migrationDirectory, file), "utf8"));
+  }
   return db;
 }

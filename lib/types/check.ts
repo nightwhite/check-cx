@@ -27,4 +27,8 @@ export interface CheckResult {
   logMessage?: string;
   officialStatus?: OfficialStatusResult; // 官方服务状态(可选)
   groupName?: string | null; // 分组名称
+  channelId?: string | null;
+  channelName?: string | null;
+  channelLogoUrl?: string | null;
+  region?: string | null;
 }

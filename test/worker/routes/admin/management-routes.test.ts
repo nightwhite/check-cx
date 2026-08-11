@@ -80,6 +80,28 @@ function jsonRequest(method: string, cookie: string, body: unknown) {
   };
 }
 
+async function createChannel(
+  app: ReturnType<typeof createWorkerApp>,
+  env: Env,
+  cookie: string,
+  name = "OpenAI Official"
+) {
+  const response = await app.request(
+    "http://example.com/api/admin/channels",
+    jsonRequest("POST", cookie, {
+      name,
+      logoUrl: null,
+      websiteUrl: "https://openai.com/",
+      statusPageUrl: "https://status.openai.com/",
+      sortOrder: 10,
+      enabled: true,
+    }),
+    env
+  );
+  expect(response.status).toBe(201);
+  return (await response.json()) as { id: string; name: string };
+}
+
 describe("admin management routes", () => {
   it("rejects admin API requests without a valid session", async () => {
     const app = createWorkerApp();
@@ -154,6 +176,7 @@ describe("admin management routes", () => {
       id: model.id,
       model: "gpt-4o",
     });
+    const channel = await createChannel(app, env, cookie);
 
     const configResponse = await app.request(
       "http://example.com/api/admin/configs",
@@ -161,11 +184,13 @@ describe("admin management routes", () => {
         name: "OpenAI primary",
         type: "openai",
         modelId: model.id,
+        channelId: channel.id,
         endpoint: "https://api.openai.com/v1/chat/completions",
         apiKey: "sk-test",
+        checkIntervalSeconds: 30,
+        region: "global",
         enabled: true,
         isMaintenance: false,
-        groupName: "core",
       }),
       env
     );
@@ -182,6 +207,10 @@ describe("admin management routes", () => {
     expect(list).toEqual([
       expect.objectContaining({
         id: config.id,
+        channelId: channel.id,
+        channelName: "OpenAI Official",
+        checkIntervalSeconds: 30,
+        region: "global",
         hasApiKey: true,
       }),
     ]);
@@ -317,6 +346,7 @@ describe("admin management routes", () => {
     );
     expect(modelResponse.status).toBe(201);
     const model = (await modelResponse.json()) as { id: string };
+    const channel = await createChannel(app, env, cookie);
 
     const mismatchedConfig = await app.request(
       "http://example.com/api/admin/configs",
@@ -324,11 +354,11 @@ describe("admin management routes", () => {
         name: "Claude over OpenAI model",
         type: "anthropic",
         modelId: model.id,
+        channelId: channel.id,
         endpoint: "https://example.com/v1/messages",
         apiKey: "sk-test",
         enabled: true,
         isMaintenance: false,
-        groupName: "SU8",
       }),
       env
     );
@@ -349,10 +379,10 @@ describe("admin management routes", () => {
         name: "Missing",
         type: "openai",
         modelId: "missing-model",
+        channelId: "missing-channel",
         endpoint: "https://example.com/v1/responses",
         enabled: true,
         isMaintenance: false,
-        groupName: null,
       }),
       env
     );
@@ -434,11 +464,11 @@ describe("admin management routes", () => {
         name: "OpenAI primary",
         type: "openai",
         modelId: "model-1",
+        channelId: "channel-1",
         endpoint: "https://api.openai.com/v1/responses",
         apiKey: "sk-test",
         enabled: true,
         isMaintenance: false,
-        groupName: "SU8",
       }),
       env
     );
@@ -465,6 +495,7 @@ describe("admin management routes", () => {
     );
     expect(modelResponse.status).toBe(201);
     const model = (await modelResponse.json()) as { id: string };
+    const channel = await createChannel(app, env, cookie);
 
     const configResponse = await app.request(
       "http://example.com/api/admin/configs",
@@ -472,11 +503,11 @@ describe("admin management routes", () => {
         name: "OpenAI primary",
         type: "openai",
         modelId: model.id,
+        channelId: channel.id,
         endpoint: "https://api.openai.com/v1/responses",
         apiKey: "sk-test",
         enabled: true,
         isMaintenance: false,
-        groupName: "SU8",
       }),
       env
     );

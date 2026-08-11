@@ -30,6 +30,36 @@ export const checkModels = sqliteTable("check_models", {
   updatedAtMs: integer("updated_at_ms").notNull().default(nowMs),
 });
 
+export const siteSettings = sqliteTable("site_settings", {
+  id: text("id").primaryKey().default("default"),
+  siteName: text("site_name").notNull().default("Check CX"),
+  statusTitle: text("status_title").notNull().default("AI Model Status"),
+  description: text("description"),
+  logoUrl: text("logo_url"),
+  faviconUrl: text("favicon_url"),
+  publicOrigin: text("public_origin"),
+  defaultCheckIntervalSeconds: integer("default_check_interval_seconds")
+    .notNull()
+    .default(60),
+  notificationCooldownSeconds: integer("notification_cooldown_seconds")
+    .notNull()
+    .default(300),
+  createdAtMs: integer("created_at_ms").notNull().default(nowMs),
+  updatedAtMs: integer("updated_at_ms").notNull().default(nowMs),
+});
+
+export const channels = sqliteTable("channels", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  logoUrl: text("logo_url"),
+  websiteUrl: text("website_url"),
+  statusPageUrl: text("status_page_url"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAtMs: integer("created_at_ms").notNull().default(nowMs),
+  updatedAtMs: integer("updated_at_ms").notNull().default(nowMs),
+});
+
 export const checkConfigs = sqliteTable(
   "check_configs",
   {
@@ -39,7 +69,11 @@ export const checkConfigs = sqliteTable(
     modelId: text("model_id")
       .notNull()
       .references(() => checkModels.id, { onDelete: "restrict" }),
+    channelId: text("channel_id").references(() => channels.id, {
+      onDelete: "set null",
+    }),
     endpoint: text("endpoint").notNull(),
+    apiFormat: text("api_format").notNull().default("chat_completions"),
     apiKeyCiphertext: text("api_key_ciphertext"),
     apiKeyNonce: text("api_key_nonce"),
     apiKeyVersion: integer("api_key_version").notNull().default(1),
@@ -48,10 +82,17 @@ export const checkConfigs = sqliteTable(
       .notNull()
       .default(false),
     groupName: text("group_name"),
+    checkIntervalSeconds: integer("check_interval_seconds"),
+    lastCheckedAtMs: integer("last_checked_at_ms"),
+    region: text("region"),
     createdAtMs: integer("created_at_ms").notNull().default(nowMs),
     updatedAtMs: integer("updated_at_ms").notNull().default(nowMs),
   },
-  (table) => [index("idx_check_configs_group_name").on(table.groupName)]
+  (table) => [
+    index("idx_check_configs_group_name").on(table.groupName),
+    index("idx_check_configs_channel_id").on(table.channelId),
+    index("idx_check_configs_due").on(table.enabled, table.lastCheckedAtMs),
+  ]
 );
 
 export const checkHistory = sqliteTable(
@@ -141,6 +182,46 @@ export const systemNotifications = sqliteTable("system_notifications", {
   level: text("level").notNull().default("info"),
   createdAtMs: integer("created_at_ms").notNull().default(nowMs),
 });
+
+export const notificationSettings = sqliteTable("notification_settings", {
+  id: text("id").primaryKey().default("default"),
+  larkWebhookCiphertext: text("lark_webhook_ciphertext"),
+  larkWebhookNonce: text("lark_webhook_nonce"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+  notifyDegraded: integer("notify_degraded", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  notifyFailed: integer("notify_failed", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  notifyRecovered: integer("notify_recovered", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  createdAtMs: integer("created_at_ms").notNull().default(nowMs),
+  updatedAtMs: integer("updated_at_ms").notNull().default(nowMs),
+});
+
+export const notificationEvents = sqliteTable(
+  "notification_events",
+  {
+    id: text("id").primaryKey(),
+    configId: text("config_id")
+      .notNull()
+      .references(() => checkConfigs.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    status: text("status").notNull(),
+    sentAtMs: integer("sent_at_ms").notNull(),
+    message: text("message"),
+    createdAtMs: integer("created_at_ms").notNull().default(nowMs),
+  },
+  (table) => [
+    index("idx_notification_events_config_type_sent").on(
+      table.configId,
+      table.eventType,
+      table.sentAtMs
+    ),
+  ]
+);
 
 export const officialStatusSnapshots = sqliteTable("official_status_snapshots", {
   provider: text("provider").primaryKey(),

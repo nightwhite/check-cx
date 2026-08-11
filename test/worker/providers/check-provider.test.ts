@@ -82,6 +82,33 @@ describe("checkProvider", () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it("preserves channel metadata in check results", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ choices: [{ message: { content: "8" } }] })
+    );
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        channelId: "codex",
+        channelName: "Codex",
+        channelLogoUrl: "https://example.com/logo.png",
+        region: "cn2",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => 12,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.channelId).toBe("codex");
+    expect(result.channelName).toBe("Codex");
+    expect(result.channelLogoUrl).toBe("https://example.com/logo.png");
+    expect(result.region).toBe("cn2");
+  });
+
   it("returns failed when provider response is not ok", async () => {
     const result = await checkProvider(baseConfig, {
       challenge,
@@ -235,7 +262,7 @@ describe("checkProvider", () => {
     });
   });
 
-  it("strips model reasoning directives for OpenAI request bodies", async () => {
+  it("strips model directives without adding reasoning request fields", async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({ choices: [{ message: { content: "8" } }] })
     );
@@ -256,10 +283,11 @@ describe("checkProvider", () => {
     const [, init] = getFetchCall(fetcher);
     const body = JSON.parse(String(init.body));
     expect(body.model).toBe("o1");
-    expect(body.reasoning_effort).toBe("high");
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.reasoning).toBeUndefined();
   });
 
-  it("uses official Responses reasoning fields and reads message output text", async () => {
+  it("uses Responses input messages without reasoning fields", async () => {
     const fetcher = vi.fn(async () =>
       textStreamResponse([
         'data: {"type":"response.output_item.added","item":{"type":"reasoning"}}\n\n',
@@ -273,6 +301,7 @@ describe("checkProvider", () => {
       {
         ...baseConfig,
         endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
         model: "gpt-5.5",
       },
       {
@@ -287,11 +316,18 @@ describe("checkProvider", () => {
     const body = JSON.parse(String(init.body));
     expect(body).toMatchObject({
       model: "gpt-5.5",
-      input: challenge.prompt,
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: challenge.prompt }],
+        },
+      ],
       max_output_tokens: 1,
-      reasoning: { effort: "medium" },
+      stream: true,
     });
-    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.messages).toBeUndefined();
+    expect(body.reasoning).toBeUndefined();
     expect(result.status).toBe("operational");
     expect(result.logMessage).toBe("8");
   });
@@ -312,6 +348,7 @@ describe("checkProvider", () => {
       {
         ...baseConfig,
         endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
         model: "gpt-5.5",
       },
       {
@@ -342,6 +379,7 @@ describe("checkProvider", () => {
       {
         ...baseConfig,
         endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
         model: "gpt-5.5",
       },
       {
@@ -361,6 +399,7 @@ describe("checkProvider", () => {
       {
         ...baseConfig,
         endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
         model: "gpt-5.5",
       },
       {

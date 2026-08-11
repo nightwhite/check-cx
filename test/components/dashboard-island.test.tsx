@@ -13,6 +13,56 @@ import { DashboardIsland } from "../../src/components/dashboard/dashboard-island
 import type { DashboardData } from "../../lib/types";
 
 const baseData: DashboardData = {
+  site: {
+    siteName: "AI Status",
+    statusTitle: "AI Channel Status",
+    description: "Production AI status",
+    logoUrl: "https://example.com/logo.png",
+    faviconUrl: "https://example.com/favicon.ico",
+    publicOrigin: "https://status.example.com",
+  },
+  channels: [
+    {
+      id: "channel-openai",
+      name: "OpenAI Official",
+      logoUrl: null,
+      websiteUrl: "https://openai.com/",
+      statusPageUrl: "https://status.openai.com/",
+      models: [
+        {
+          id: "core-1",
+          name: "SU8 gpt-5.5",
+          type: "openai",
+          model: "gpt-4o-mini",
+          status: "failed",
+          latencyMs: 120,
+          checkedAt: "2026-05-03T00:00:00.000Z",
+          message: "Provider returned HTTP 500",
+          officialStatus: {
+            status: "degraded",
+            message: "OpenAI incident",
+            checkedAt: "2026-05-03T00:00:00.000Z",
+            affectedComponents: ["API"],
+          },
+          availability: {
+            "7d": 90,
+          },
+          history: [
+            {
+              status: "operational",
+              latencyMs: 120,
+              checkedAt: "2026-05-03T00:00:00.000Z",
+            },
+            {
+              status: "failed",
+              latencyMs: null,
+              checkedAt: "2026-05-02T00:00:00.000Z",
+            },
+          ],
+        },
+      ],
+    },
+  ],
   providerTimelines: [
     {
       id: "core-1",
@@ -90,6 +140,91 @@ const baseData: DashboardData = {
   generatedAt: 1_775_174_400_000,
 };
 
+function withFirstModelName(data: DashboardData, name: string): DashboardData {
+  return {
+    ...data,
+    channels: [
+      {
+        ...data.channels[0],
+        models: [
+          {
+            ...data.channels[0].models[0],
+            name,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function withClaudeChannel(data: DashboardData): DashboardData {
+  return {
+    ...data,
+    channels: [
+      ...data.channels,
+      {
+        id: "channel-claude",
+        name: "Claude Official",
+        logoUrl: null,
+        websiteUrl: "https://www.anthropic.com/",
+        statusPageUrl: null,
+        models: [
+          {
+            ...data.channels[0].models[0],
+            id: "claude-1",
+            name: "Claude",
+            type: "anthropic",
+            model: "claude-sonnet-4",
+            status: "operational",
+            message: "OK",
+            officialStatus: undefined,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function withFirstModelStatus(
+  data: DashboardData,
+  status: DashboardData["channels"][number]["models"][number]["status"]
+): DashboardData {
+  return {
+    ...data,
+    channels: [
+      {
+        ...data.channels[0],
+        models: [
+          {
+            ...data.channels[0].models[0],
+            status,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function withFirstModelLatency(data: DashboardData, latencyMs: number): DashboardData {
+  return {
+    ...data,
+    channels: [
+      {
+        ...data.channels[0],
+        models: [
+          {
+            ...data.channels[0].models[0],
+            status: "operational",
+            latencyMs,
+            message: "OK",
+            officialStatus: undefined,
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function jsonResponse(data: DashboardData) {
   return new Response(JSON.stringify(data), {
     status: 200,
@@ -113,20 +248,7 @@ describe("DashboardIsland", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(baseData))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          ...baseData,
-          providerTimelines: [
-            {
-              ...baseData.providerTimelines[0],
-              latest: {
-                ...baseData.providerTimelines[0].latest,
-                name: "Anthropic",
-              },
-            },
-          ],
-        })
-      );
+      .mockResolvedValueOnce(jsonResponse(withFirstModelName(baseData, "Anthropic")));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<DashboardIsland />);
@@ -145,6 +267,32 @@ describe("DashboardIsland", () => {
     });
     expect(screen.getByRole("heading", { name: "Anthropic" })).not.toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("restarts the next-check countdown after an automatic refresh", async () => {
+    const now = new Date("2026-05-03T00:00:00.000Z");
+    vi.setSystemTime(now);
+    const fetchMock = vi.fn(async () => jsonResponse(baseData));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("下次检查")).not.toBeNull();
+    expect(screen.getByText("1s")).not.toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+      vi.setSystemTime(new Date(now.getTime() + 1_000));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("1s")).not.toBeNull();
   });
 
   it("uses the URL period and marks the dashboard ready for screenshots", async () => {
@@ -184,17 +332,8 @@ describe("DashboardIsland", () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          ...baseData,
+          ...withFirstModelName(baseData, "Fresh"),
           trendPeriod: "15d",
-          providerTimelines: [
-            {
-              ...baseData.providerTimelines[0],
-              latest: {
-                ...baseData.providerTimelines[0].latest,
-                name: "Fresh",
-              },
-            },
-          ],
         })
       );
     vi.stubGlobal("fetch", fetchMock);
@@ -206,20 +345,7 @@ describe("DashboardIsland", () => {
     });
     expect(screen.getByText("Fresh")).not.toBeNull();
 
-    resolveFirst(
-      jsonResponse({
-        ...baseData,
-        providerTimelines: [
-          {
-            ...baseData.providerTimelines[0],
-            latest: {
-              ...baseData.providerTimelines[0].latest,
-              name: "Stale",
-            },
-          },
-        ],
-      })
-    );
+    resolveFirst(jsonResponse(withFirstModelName(baseData, "Stale")));
     await act(async () => {
       await Promise.resolve();
     });
@@ -232,20 +358,7 @@ describe("DashboardIsland", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(baseData))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          ...baseData,
-          providerTimelines: [
-            {
-              ...baseData.providerTimelines[0],
-              latest: {
-                ...baseData.providerTimelines[0].latest,
-                name: "SU8 gpt-4o",
-              },
-            },
-          ],
-        })
-      );
+      .mockResolvedValueOnce(jsonResponse(withFirstModelName(baseData, "SU8 gpt-4o")));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<DashboardIsland />);
@@ -274,37 +387,18 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByRole("heading", { name: "SU8.Codes" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Provider 筛选 OpenAI" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("heading", { name: "Status" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "模型类型筛选 OpenAI" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("heading", { name: "Check CX" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "SU8", level: 2 })).toBeNull();
     expect(screen.queryByRole("heading", { name: "SU8 gpt-5.5" })).toBeNull();
     expect(screen.getByRole("heading", { name: "gpt-5.5" })).not.toBeNull();
   });
 
-  it("filters group deep links by provider family rather than database group name", async () => {
-    window.history.replaceState({}, "", "/group/Claude");
+  it("renders configured site and channel model rows", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        jsonResponse({
-          ...baseData,
-          providerTimelines: [
-            ...baseData.providerTimelines,
-            {
-              id: "claude-1",
-              latest: {
-                ...baseData.providerTimelines[0].latest,
-                id: "claude-1",
-                name: "Claude",
-                type: "anthropic",
-                groupName: "SU8",
-              },
-              items: [],
-            },
-          ],
-        })
-      )
+      vi.fn(async () => jsonResponse(baseData))
     );
 
     render(<DashboardIsland />);
@@ -312,10 +406,71 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByRole("heading", { name: "SU8.Codes" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Provider 筛选 Claude" }).getAttribute("aria-expanded")).toBe("false");
+
+    expect(screen.getByRole("heading", { name: "Status" })).not.toBeNull();
+    expect(screen.getByText("Production AI status")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "OpenAI Official" })).not.toBeNull();
+    expect(screen.getByRole("link", { name: "官方状态页" }).getAttribute("href")).toBe("https://status.openai.com/");
+    expect(
+      screen
+        .getAllByRole("link", { name: "官网" })
+        .filter((link) => link.getAttribute("href") === "https://status.example.com")
+    ).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "gpt-5.5" })).not.toBeNull();
+    expect(screen.getByText("最近 2 次检查")).not.toBeNull();
+  });
+
+  it("shows status segment check time in UTC+8 on hover", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(baseData))
+    );
+
+    render(<DashboardIsland />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTitle("2026/5/3 08:00:00 · 正常 · 120 ms")).not.toBeNull();
+  });
+
+  it("filters group deep links by provider family rather than database group name", async () => {
+    window.history.replaceState({}, "", "/group/Claude");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(withClaudeChannel(baseData)))
+    );
+
+    render(<DashboardIsland />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("heading", { name: "Status" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "模型类型筛选 Claude" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "OpenAI" })).toBeNull();
+  });
+
+  it("distinguishes filter misses from missing monitor data", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(baseData))
+    );
+
+    render(<DashboardIsland />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    fireEvent.change(screen.getByLabelText("搜索模型、类型或端点"), {
+      target: { value: "not-a-model" },
+    });
+
+    expect(screen.getByText("当前筛选下没有匹配的模型")).not.toBeNull();
+    expect(screen.queryByText("暂无匹配的健康检查快照")).toBeNull();
   });
 
 
@@ -332,12 +487,16 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByLabelText("搜索 Provider、模型或端点")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Provider 筛选 OpenAI" })).not.toBeNull();
-    expect(screen.queryByRole("group", { name: "Provider 筛选" })).toBeNull();
-    expect(screen.queryByRole("combobox", { name: "Provider 筛选" })).toBeNull();
-    expect(screen.getByText("Status Page")).not.toBeNull();
-    expect(screen.getByText("https://www.su8.codes")).not.toBeNull();
+    expect(screen.getByLabelText("搜索模型、类型或端点")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "模型类型筛选 OpenAI" })).not.toBeNull();
+    expect(screen.queryByRole("group", { name: "模型类型筛选" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "模型类型筛选" })).toBeNull();
+    expect(screen.getByRole("img", { name: "AI Status" }).getAttribute("src")).toBe("https://example.com/logo.png");
+    expect(
+      screen
+        .getAllByRole("link", { name: "官网" })
+        .some((link) => link.getAttribute("href") === "https://status.example.com")
+    ).toBe(true);
     expect(screen.getByLabelText("OpenAI provider")).not.toBeNull();
     expect(screen.queryByText("OP")).toBeNull();
     expect(screen.queryByText("prod")).toBeNull();
@@ -355,29 +514,13 @@ describe("DashboardIsland", () => {
     expect(screen.getByText("官方状态：OpenAI incident")).not.toBeNull();
   });
 
-  it("uses a designed dropdown for provider filtering", async () => {
-    window.history.replaceState({}, "", "/");
+  it.each([
+    ["keeps the status green at 8 seconds", 8_000, "border-emerald-500/30"],
+    ["turns the status yellow above 8 seconds", 8_001, "border-amber-500/30"],
+  ])("%s", async (_label, latencyMs, colorClass) => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        jsonResponse({
-          ...baseData,
-          providerTimelines: [
-            ...baseData.providerTimelines,
-            {
-              id: "claude-1",
-              latest: {
-                ...baseData.providerTimelines[0].latest,
-                id: "claude-1",
-                name: "Claude",
-                type: "anthropic",
-                groupName: "SU8",
-              },
-              items: [],
-            },
-          ],
-        })
-      )
+      vi.fn(async () => jsonResponse(withFirstModelLatency(baseData, latencyMs)))
     );
 
     render(<DashboardIsland />);
@@ -386,18 +529,38 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
 
-    const trigger = screen.getByRole("button", { name: "Provider 筛选 全部" });
+    expect(screen.queryByText("首字")).toBeNull();
+    expect(screen.queryByText(`${latencyMs} ms`)).toBeNull();
+    expect(screen.getAllByText("正常")[1].closest("span")?.className).toContain(
+      colorClass
+    );
+  });
+
+  it("uses a designed dropdown for provider filtering", async () => {
+    window.history.replaceState({}, "", "/");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(withClaudeChannel(baseData)))
+    );
+
+    render(<DashboardIsland />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const trigger = screen.getByRole("button", { name: "模型类型筛选 全部" });
     expect(trigger.getAttribute("aria-haspopup")).toBe("listbox");
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
 
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("listbox", { name: "Provider 筛选" })).not.toBeNull();
+    expect(screen.getByRole("listbox", { name: "模型类型筛选" })).not.toBeNull();
     expect(screen.getByRole("option", { name: "OpenAI" })).not.toBeNull();
     expect(screen.getByRole("option", { name: "Claude" })).not.toBeNull();
 
     fireEvent.click(screen.getByRole("option", { name: "Claude" }));
-    expect(screen.getByRole("button", { name: "Provider 筛选 Claude" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: "模型类型筛选 Claude" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("heading", { name: "gpt-5.5" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
   });

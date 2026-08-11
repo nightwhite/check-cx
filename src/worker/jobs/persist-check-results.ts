@@ -87,6 +87,17 @@ export async function persistCheckResults(
           nowMs
         )
     );
+
+    statements.push(
+      db
+        .prepare(
+          `UPDATE check_configs
+           SET last_checked_at_ms = ?,
+               updated_at_ms = ?
+           WHERE id = ?`
+        )
+        .bind(nowMs, nowMs, result.id)
+    );
   }
 
   if (statements.length > 0) {

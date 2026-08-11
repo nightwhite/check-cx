@@ -41,10 +41,15 @@ function setupFetch() {
           model: "gpt-4o",
           templateId: "template-openai",
           templateName: "OpenAI template",
+          channelId: "channel-openai",
+          channelName: "OpenAI Official",
+          channelLogoUrl: null,
           endpoint: "https://api.openai.com/v1/chat/completions",
           enabled: true,
           isMaintenance: false,
-          groupName: "core",
+          groupName: null,
+          checkIntervalSeconds: 30,
+          region: "global",
           hasApiKey: true,
           apiKey: "sk-live-secret",
           createdAtMs: 1_700_000_000_000,
@@ -58,10 +63,15 @@ function setupFetch() {
           model: "gemini-2.0-flash",
           templateId: null,
           templateName: null,
+          channelId: "channel-google",
+          channelName: "Google AI Studio",
+          channelLogoUrl: null,
           endpoint: "https://generativelanguage.googleapis.com/v1beta/models",
           enabled: false,
           isMaintenance: true,
           groupName: null,
+          checkIntervalSeconds: null,
+          region: null,
           hasApiKey: false,
           createdAtMs: 1_700_000_000_000,
           updatedAtMs: 1_700_000_000_000,
@@ -101,6 +111,21 @@ function setupFetch() {
           groupName: "core",
           websiteUrl: "https://status.example.com",
           tags: "prod,ai",
+          createdAtMs: 1_700_000_000_000,
+          updatedAtMs: 1_700_000_000_000,
+        },
+      ]);
+    }
+    if (path === "/api/admin/channels") {
+      return jsonResponse([
+        {
+          id: "channel-openai",
+          name: "OpenAI Official",
+          logoUrl: null,
+          websiteUrl: "https://openai.com/",
+          statusPageUrl: "https://status.openai.com/",
+          sortOrder: 10,
+          enabled: true,
           createdAtMs: 1_700_000_000_000,
           updatedAtMs: 1_700_000_000_000,
         },
@@ -163,6 +188,7 @@ function setupEmptyFetch() {
       path === "/api/admin/models" ||
       path === "/api/admin/templates" ||
       path === "/api/admin/groups" ||
+      path === "/api/admin/channels" ||
       path === "/api/admin/notifications"
     ) {
       return jsonResponse([]);
@@ -199,8 +225,11 @@ describe("admin management views", () => {
     renderShell("configs");
 
     expect(await screen.findByText("OpenAI primary")).not.toBeNull();
+    expect(screen.getByText("OpenAI Official")).not.toBeNull();
+    expect(screen.getByText("30 秒")).not.toBeNull();
+    expect(screen.getByText("global")).not.toBeNull();
     expect(screen.getByText("已配置")).not.toBeNull();
-    expect(screen.getByText("未配置")).not.toBeNull();
+    expect(screen.getAllByText("未配置").length).toBeGreaterThan(0);
     expect(screen.queryByText(/sk-live-secret/)).toBeNull();
     expect(screen.queryByText(/批量/)).toBeNull();
   });
@@ -238,6 +267,17 @@ describe("admin management views", () => {
 
     expect(await screen.findByText("还没有模型")).not.toBeNull();
     expect(screen.getAllByRole("button", { name: "新增模型" }).length).toBeGreaterThan(0);
+  });
+
+  it("requires a channel when creating monitor configs", async () => {
+    setupFetch();
+
+    renderShell("configs");
+
+    fireEvent.click(await screen.findByRole("button", { name: "新增监控项" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存监控项" }));
+
+    expect(screen.getByText("渠道必选")).not.toBeNull();
   });
 
   it("shows form validation errors before saving invalid data", async () => {

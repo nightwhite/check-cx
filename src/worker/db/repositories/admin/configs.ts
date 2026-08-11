@@ -17,10 +17,16 @@ interface ConfigRow {
   model: string;
   template_id: string | null;
   template_name: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  channel_logo_url: string | null;
   endpoint: string;
+  api_format: AdminConfigRecord["apiFormat"];
   enabled: number;
   is_maintenance: number;
   group_name: string | null;
+  check_interval_seconds: number | null;
+  region: string | null;
   has_api_key: number;
   created_at_ms: number;
   updated_at_ms: number;
@@ -35,6 +41,10 @@ interface ConfigIdRow {
   id: string;
 }
 
+interface ChannelIdRow {
+  id: string;
+}
+
 function toRecord(row: ConfigRow): AdminConfigRecord {
   return {
     id: row.id,
@@ -44,10 +54,16 @@ function toRecord(row: ConfigRow): AdminConfigRecord {
     model: row.model,
     templateId: row.template_id,
     templateName: row.template_name,
+    channelId: row.channel_id,
+    channelName: row.channel_name,
+    channelLogoUrl: row.channel_logo_url,
     endpoint: row.endpoint,
+    apiFormat: row.api_format,
     enabled: bool(row.enabled),
     isMaintenance: bool(row.is_maintenance),
     groupName: row.group_name,
+    checkIntervalSeconds: row.check_interval_seconds,
+    region: row.region,
     hasApiKey: bool(row.has_api_key),
     createdAtMs: row.created_at_ms,
     updatedAtMs: row.updated_at_ms,
@@ -69,9 +85,10 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
       await db
         .prepare(
           `INSERT INTO check_configs
-             (id, name, type, model_id, endpoint, api_key_ciphertext, api_key_nonce,
-              api_key_version, enabled, is_maintenance, group_name, created_at_ms, updated_at_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             (id, name, type, model_id, endpoint, api_format, api_key_ciphertext, api_key_nonce,
+              api_key_version, enabled, is_maintenance, group_name, channel_id,
+              check_interval_seconds, region, created_at_ms, updated_at_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           input.id,
@@ -79,12 +96,16 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
           input.type,
           input.modelId,
           input.endpoint,
+          input.apiFormat ?? "chat_completions",
           ciphertext,
           nonce,
           version,
           input.enabled,
           input.isMaintenance,
           input.groupName,
+          input.channelId,
+          input.checkIntervalSeconds,
+          input.region,
           input.nowMs,
           input.nowMs
         )
@@ -96,13 +117,16 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
         .prepare(
           `SELECT c.id, c.name, c.type, c.model_id, m.model,
                   m.template_id, t.name AS template_name,
-                  c.endpoint, c.enabled, c.is_maintenance, c.group_name,
+                  c.channel_id, ch.name AS channel_name, ch.logo_url AS channel_logo_url,
+                  c.endpoint, c.api_format, c.enabled, c.is_maintenance, c.group_name,
+                  c.check_interval_seconds, c.region,
                   CASE WHEN c.api_key_ciphertext IS NOT NULL AND c.api_key_nonce IS NOT NULL
                     THEN 1 ELSE 0 END AS has_api_key,
                   c.created_at_ms, c.updated_at_ms
            FROM check_configs c
            JOIN check_models m ON m.id = c.model_id
            LEFT JOIN check_request_templates t ON t.id = m.template_id
+           LEFT JOIN channels ch ON ch.id = c.channel_id
            ORDER BY c.updated_at_ms DESC, c.created_at_ms DESC, c.name ASC`
         )
         .all<ConfigRow>();
@@ -125,12 +149,21 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
       return Boolean(row);
     },
 
+    async channelExists(id: string) {
+      const row = await db
+        .prepare("SELECT id FROM channels WHERE id = ?")
+        .bind(id)
+        .first<ChannelIdRow>();
+      return Boolean(row);
+    },
+
     async update(id: string, input: UpdateAdminConfigInput) {
       const result = await db
         .prepare(
           `UPDATE check_configs
-           SET name = ?, type = ?, model_id = ?, endpoint = ?, enabled = ?,
-               is_maintenance = ?, group_name = ?, updated_at_ms = ?
+           SET name = ?, type = ?, model_id = ?, endpoint = ?, api_format = ?, enabled = ?,
+               is_maintenance = ?, group_name = ?, channel_id = ?,
+               check_interval_seconds = ?, region = ?, updated_at_ms = ?
            WHERE id = ?`
         )
         .bind(
@@ -138,9 +171,13 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
           input.type,
           input.modelId,
           input.endpoint,
+          input.apiFormat ?? "chat_completions",
           input.enabled,
           input.isMaintenance,
           input.groupName,
+          input.channelId,
+          input.checkIntervalSeconds,
+          input.region,
           input.nowMs,
           id
         )

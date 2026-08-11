@@ -25,20 +25,6 @@ const RESERVED_METADATA_KEYS = new Set([
 ]);
 const GOOGLE_GENERATIVE_API_REGEX =
   /\/v\d+\w*\/models\/[^/:]+:(generateContent|streamGenerateContent)\/?$/;
-const REASONING_EFFORT_ALIASES: Record<string, "low" | "medium" | "high"> = {
-  mini: "low",
-  minimal: "low",
-  low: "low",
-  medium: "medium",
-  high: "high",
-};
-const REASONING_MODEL_PATTERNS = [
-  /codex/i,
-  /\bgpt-5/i,
-  /\bo[1-9](?:-|$)/i,
-  /\bdeepseek-r1/i,
-  /\bqwq/i,
-];
 
 export interface CheckProviderOptions {
   challenge?: Challenge;
@@ -66,6 +52,10 @@ function buildBaseResult(
     checkedAt: new Date(checkedAtMs).toISOString(),
     message,
     groupName: config.groupName ?? null,
+    channelId: config.channelId ?? null,
+    channelName: config.channelName ?? null,
+    channelLogoUrl: config.channelLogoUrl ?? null,
+    region: config.region ?? null,
   };
 }
 
@@ -107,31 +97,26 @@ function isOpenAICompatibleGemini(config: WorkerProviderConfig): boolean {
   return config.type === "gemini" && !isGoogleGenerativeEndpoint(config.endpoint);
 }
 
-function parseModelDirective(model: string) {
+function parseModelId(model: string) {
   const trimmed = model.trim();
   const directiveMatch = trimmed.match(
     /^(.*?)[@#](mini|minimal|low|medium|high)$/i
   );
   if (directiveMatch) {
-    const [, modelId, effortKey] = directiveMatch;
+    const [, modelId] = directiveMatch;
     return {
       modelId: modelId.trim() || trimmed,
-      reasoningEffort: REASONING_EFFORT_ALIASES[effortKey.toLowerCase()],
     };
   }
 
-  const isReasoningModel = REASONING_MODEL_PATTERNS.some((pattern) =>
-    pattern.test(trimmed)
-  );
   return {
     modelId: trimmed,
-    reasoningEffort: isReasoningModel ? "medium" : undefined,
   };
 }
 
 function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
   const metadata = filterMetadata(config.metadata);
-  const { modelId, reasoningEffort } = parseModelDirective(config.model);
+  const { modelId } = parseModelId(config.model);
 
   if (config.type === "anthropic") {
     return {
@@ -150,14 +135,19 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
     };
   }
 
-  if (/\/responses\/?$/.test(config.endpoint.split("?")[0])) {
+  if (config.apiFormat === "responses") {
     return {
       ...metadata,
       model: modelId,
-      input: challenge.prompt,
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: challenge.prompt }],
+        },
+      ],
       max_output_tokens: 1,
       stream: true,
-      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     };
   }
 
@@ -166,7 +156,6 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
     model: modelId,
     messages: [{ role: "user", content: challenge.prompt }],
     max_tokens: 1,
-    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
   };
 }
 
@@ -373,9 +362,7 @@ export async function checkProvider(
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   );
   const startedAt = now();
-  const isResponsesRequest = /\/responses\/?$/.test(
-    config.endpoint.split("?")[0]
-  );
+  const isResponsesRequest = config.apiFormat === "responses";
 
   try {
     const response = await fetcher(buildRequestUrl(config), {

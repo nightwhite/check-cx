@@ -1,7 +1,13 @@
 import { checkProvider } from "../providers";
-import type { WorkerCheckResult, WorkerProviderConfig } from "../providers";
+import type {
+  WorkerCheckResult,
+  WorkerHealthStatus,
+  WorkerProviderConfig,
+} from "../providers";
+import { decryptProviderKey } from "../crypto/provider-key";
 import { loadEnabledProviderConfigs } from "../db/repositories";
 import { createJobLockRepository } from "./job-lock";
+import { processNotificationEvents } from "./notification-events";
 import { persistCheckResults } from "./persist-check-results";
 import { pruneCheckHistory } from "./prune-check-history";
 import { runProviderChecks } from "./run-checks";
@@ -50,6 +56,86 @@ function isHistoryResult(result: WorkerCheckResult): boolean {
   return result.status !== "maintenance";
 }
 
+interface PreviousStatusRow {
+  config_id: string;
+  status: WorkerHealthStatus;
+}
+
+interface SiteSettingsRow {
+  site_name: string;
+  public_origin: string | null;
+  notification_cooldown_seconds: number;
+}
+
+interface NotificationSettingsRow {
+  enabled: number;
+  lark_webhook_ciphertext: string | null;
+  lark_webhook_nonce: string | null;
+  notify_degraded: number;
+  notify_failed: number;
+  notify_recovered: number;
+}
+
+async function loadPreviousStatuses(env: Env, configIds: string[]) {
+  const statuses = new Map<string, WorkerHealthStatus>();
+  for (const configId of configIds) {
+    const row = await env.DB.prepare(
+      "SELECT config_id, status FROM check_latest WHERE config_id = ?"
+    )
+      .bind(configId)
+      .first<PreviousStatusRow>();
+    if (row) {
+      statuses.set(row.config_id, row.status);
+    }
+  }
+  return statuses;
+}
+
+async function loadNotificationContext(env: Env) {
+  const siteRow = await env.DB.prepare(
+    `SELECT site_name, public_origin, notification_cooldown_seconds
+     FROM site_settings
+     WHERE id = 'default'`
+  ).first<SiteSettingsRow>();
+  const settingsRow = await env.DB.prepare(
+    `SELECT enabled, lark_webhook_ciphertext, lark_webhook_nonce,
+            notify_degraded, notify_failed, notify_recovered
+     FROM notification_settings
+     WHERE id = 'default'`
+  ).first<NotificationSettingsRow>();
+
+  if (!siteRow || !settingsRow) {
+    return null;
+  }
+
+  const webhookUrl =
+    settingsRow.lark_webhook_ciphertext && settingsRow.lark_webhook_nonce
+      ? await decryptProviderKey(
+          {
+            ciphertext: settingsRow.lark_webhook_ciphertext,
+            nonce: settingsRow.lark_webhook_nonce,
+            version: 1,
+          },
+          getConfigEncryptionKey(env)
+        )
+      : null;
+
+  return {
+    site: {
+      siteName: siteRow.site_name,
+      publicOrigin: siteRow.public_origin,
+      notificationCooldownSeconds: siteRow.notification_cooldown_seconds,
+    },
+    settings: {
+      enabled: settingsRow.enabled === 1,
+      webhookUrl,
+      notifyDegraded: settingsRow.notify_degraded === 1,
+      notifyFailed: settingsRow.notify_failed === 1,
+      notifyRecovered: settingsRow.notify_recovered === 1,
+    },
+  };
+}
+
 export function shouldPruneCheckHistory(nowMs: number): boolean {
   return new Date(nowMs).getUTCMinutes() === 0;
 }
@@ -92,8 +178,16 @@ export async function runHealthCheckJob(
   try {
     const configs = options.loadConfigs
       ? await options.loadConfigs(env)
-      : await loadEnabledProviderConfigs(env.DB, getConfigEncryptionKey(env));
+      : await loadEnabledProviderConfigs(
+          env.DB,
+          getConfigEncryptionKey(env),
+          startedAtMs
+        );
     const runCheck = options.runCheck ?? checkProvider;
+    const previousStatuses = await loadPreviousStatuses(
+      env,
+      configs.map((config) => config.id)
+    );
     const results = await runProviderChecks(configs, runCheck);
     const historyResults = results.filter(isHistoryResult);
     const snapshotAtMs = now();
@@ -101,13 +195,26 @@ export async function runHealthCheckJob(
     await persistCheckResults(env.DB, results, snapshotAtMs, {
       shouldWriteHistory: isHistoryResult,
     });
+    const notificationContext = await loadNotificationContext(env);
+    if (notificationContext) {
+      await processNotificationEvents({
+        db: env.DB,
+        results,
+        previousStatuses,
+        site: notificationContext.site,
+        settings: notificationContext.settings,
+        nowMs: snapshotAtMs,
+      });
+    }
     await updateAvailabilityRollups(env.DB, historyResults, snapshotAtMs);
     if (options.writeOfficialStatuses) {
       await options.writeOfficialStatuses(env);
     } else {
       await writeOfficialStatusSnapshots(env.DB);
     }
-    await writeDashboardSnapshot(env.DB, results, snapshotAtMs);
+    if (results.length > 0) {
+      await writeDashboardSnapshot(env.DB, results, snapshotAtMs);
+    }
     if (shouldPruneCheckHistory(scheduledTime)) {
       await pruneCheckHistory(env.DB, snapshotAtMs);
     }

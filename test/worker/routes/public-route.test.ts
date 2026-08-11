@@ -8,6 +8,7 @@ const browserState = vi.hoisted(() => ({
   launch: vi.fn(),
   calls: {
     goto: "",
+    waitForFunction: "",
     selector: "",
     screenshot: null as Record<string, unknown> | null,
     closed: false,
@@ -61,6 +62,7 @@ function createEnv(db: FakeD1, overrides: Partial<Env> = {}) {
   browserState.launch.mockClear();
   browserState.calls = {
     goto: "",
+    waitForFunction: "",
     selector: "",
     screenshot: null,
     closed: false,
@@ -77,6 +79,9 @@ function createEnv(db: FakeD1, overrides: Partial<Env> = {}) {
         },
         async waitForSelector(selector: string) {
           browserState.calls.selector = selector;
+        },
+        async waitForFunction(script: string) {
+          browserState.calls.waitForFunction = script;
         },
         async screenshot(options: Record<string, unknown>) {
           browserState.calls.screenshot = options;
@@ -100,6 +105,69 @@ function createEnv(db: FakeD1, overrides: Partial<Env> = {}) {
 
 function createSnapshotPayload() {
   return {
+    site: {
+      siteName: "AI Status",
+      statusTitle: "AI Channel Status",
+      description: "Production AI status",
+      logoUrl: "https://example.com/logo.png",
+      faviconUrl: "https://example.com/favicon.ico",
+      publicOrigin: "https://status.example.com",
+    },
+    channels: [
+      {
+        id: "channel-openai",
+        name: "OpenAI Official",
+        logoUrl: null,
+        websiteUrl: "https://openai.com/",
+        statusPageUrl: "https://status.openai.com/",
+        models: [
+          {
+            id: "cfg-openai",
+            name: "OpenAI GPT-4o",
+            type: "openai",
+            model: "gpt-4o",
+            status: "operational",
+            latencyMs: 320,
+            checkedAt: "2026-05-20T00:00:00.000Z",
+            message: "OK",
+            availability: {
+              "7d": 100,
+              "15d": 95,
+            },
+            history: [
+              {
+                status: "operational",
+                latencyMs: 320,
+                checkedAt: "2026-05-20T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: "channel-google",
+        name: "Google AI Studio",
+        logoUrl: null,
+        websiteUrl: null,
+        statusPageUrl: null,
+        models: [
+          {
+            id: "cfg-gemini",
+            name: "Gemini Flash",
+            type: "gemini",
+            model: "gemini-2.5-flash",
+            status: "degraded",
+            latencyMs: 7_200,
+            checkedAt: "2026-05-20T00:01:00.000Z",
+            message: "Slow response",
+            availability: {
+              "7d": 80,
+            },
+            history: [],
+          },
+        ],
+      },
+    ],
     providerTimelines: [
       {
         id: "cfg-openai",
@@ -181,10 +249,18 @@ describe("public status routes", () => {
     expect(response.headers.get("Cache-Control")).toContain("public");
 
     await expect(response.json()).resolves.toEqual({
-      version: 1,
+      version: 2,
       generatedAt: "2026-05-20T00:01:00.000Z",
       period: "7d",
       overallStatus: "degraded",
+      site: {
+        siteName: "AI Status",
+        statusTitle: "AI Channel Status",
+        description: "Production AI status",
+        logoUrl: "https://example.com/logo.png",
+        faviconUrl: "https://example.com/favicon.ico",
+        publicOrigin: "https://status.example.com",
+      },
       summary: {
         total: 2,
         operational: 1,
@@ -193,35 +269,59 @@ describe("public status routes", () => {
         maintenance: 0,
         unknown: 0,
       },
-      providers: [
+      channels: [
         {
-          id: "cfg-openai",
-          name: "OpenAI GPT-4o",
-          type: "openai",
-          model: "gpt-4o",
-          group: "OpenAI",
-          status: "operational",
-          latencyMs: 320,
-          checkedAt: "2026-05-20T00:00:00.000Z",
-          message: "OK",
-          availability: {
-            "7d": 100,
-            "15d": 95,
-          },
+          id: "channel-openai",
+          name: "OpenAI Official",
+          logoUrl: null,
+          websiteUrl: "https://openai.com/",
+          statusPageUrl: "https://status.openai.com/",
+          models: [
+            {
+              id: "cfg-openai",
+              name: "OpenAI GPT-4o",
+              type: "openai",
+              model: "gpt-4o",
+              status: "operational",
+              latencyMs: 320,
+              checkedAt: "2026-05-20T00:00:00.000Z",
+              message: "OK",
+              availability: {
+                "7d": 100,
+                "15d": 95,
+              },
+              history: [
+                {
+                  status: "operational",
+                  latencyMs: 320,
+                  checkedAt: "2026-05-20T00:00:00.000Z",
+                },
+              ],
+            },
+          ],
         },
         {
-          id: "cfg-gemini",
-          name: "Gemini Flash",
-          type: "gemini",
-          model: "gemini-2.5-flash",
-          group: "Gemini",
-          status: "degraded",
-          latencyMs: 7_200,
-          checkedAt: "2026-05-20T00:01:00.000Z",
-          message: "Slow response",
-          availability: {
-            "7d": 80,
-          },
+          id: "channel-google",
+          name: "Google AI Studio",
+          logoUrl: null,
+          websiteUrl: null,
+          statusPageUrl: null,
+          models: [
+            {
+              id: "cfg-gemini",
+              name: "Gemini Flash",
+              type: "gemini",
+              model: "gemini-2.5-flash",
+              status: "degraded",
+              latencyMs: 7200,
+              checkedAt: "2026-05-20T00:01:00.000Z",
+              message: "Slow response",
+              availability: {
+                "7d": 80,
+              },
+              history: [],
+            },
+          ],
         },
       ],
     });
@@ -268,13 +368,13 @@ describe("public status routes", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      version: 1,
+      version: 2,
       period: "7d",
       overallStatus: "unknown",
       summary: {
         total: 0,
       },
-      providers: [],
+      channels: [],
     });
   });
 
@@ -348,6 +448,7 @@ describe("public status routes", () => {
       "https://status.example.com/?period=7d&screenshot=1"
     );
     expect(browserState.calls.selector).toBe("[data-dashboard-ready='true']");
+    expect(browserState.calls.waitForFunction).toContain("document.images");
     expect(browserState.calls.screenshot).toEqual({
       type: "png",
       fullPage: true,

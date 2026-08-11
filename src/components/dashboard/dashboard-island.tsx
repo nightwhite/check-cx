@@ -7,18 +7,16 @@ import {
   Check,
   ChevronDown,
   ExternalLink,
-  Radio,
   RefreshCcw,
   Search,
-  Zap,
 } from "lucide-react";
 
 import type {
   AvailabilityPeriod,
-  AvailabilityStat,
+  DashboardChannel,
+  DashboardChannelModel,
   DashboardData,
   HealthStatus,
-  ProviderTimeline,
   TimelineItem,
 } from "@/lib/types";
 import { ProviderIcon } from "@/components/provider-icon";
@@ -29,8 +27,6 @@ const PERIODS: Array<{ value: AvailabilityPeriod; label: string }> = [
   { value: "15d", label: "15 天" },
   { value: "30d", label: "30 天" },
 ];
-const SITE_GROUP_NAME = "SU8";
-const SITE_DISPLAY_NAME = "SU8.Codes";
 const HISTORY_SEGMENT_COUNT = 60;
 
 const STATUS_LABEL: Record<string, string> = {
@@ -78,11 +74,22 @@ function formatLatency(value: number | null | undefined) {
   return typeof value === "number" ? `${Math.round(value)} ms` : "—";
 }
 
+const chinaTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
 function formatTime(value: string | null | undefined) {
   if (!value) {
     return "暂无数据";
   }
-  return new Date(value).toLocaleString();
+  return chinaTimeFormatter.format(new Date(value));
 }
 
 function formatCountdown(ms: number | null) {
@@ -97,37 +104,24 @@ function formatCountdown(ms: number | null) {
 
 function getProviderFamilies(data: DashboardData | null) {
   const families = new Set<string>();
-  for (const timeline of data?.providerTimelines ?? []) {
-    families.add(getProviderFamily(timeline.latest.type));
+  for (const channel of data?.channels ?? []) {
+    for (const model of channel.models) {
+      families.add(getProviderFamily(model.type));
+    }
   }
   return [...families].sort((left, right) => left.localeCompare(right));
 }
 
-function getSiteInfo(data: DashboardData | null) {
-  return data?.groupInfos.find((info) => info.groupName === SITE_GROUP_NAME) ?? null;
-}
-
-function getAvailabilityStat(
-  data: DashboardData | null,
-  timeline: ProviderTimeline,
-  period: AvailabilityPeriod
-) {
-  return data?.availabilityStats?.[timeline.id]?.find(
-    (item) => item.period === period
-  ) ?? null;
-}
-
-function matchesSearch(timeline: ProviderTimeline, query: string) {
+function matchesModel(model: DashboardChannelModel, query: string) {
   if (!query) {
     return true;
   }
 
   const target = [
-    timeline.latest.name,
-    timeline.latest.model,
-    timeline.latest.type,
-    getProviderFamily(timeline.latest.type),
-    timeline.latest.endpoint,
+    model.name,
+    model.model,
+    model.type,
+    getProviderFamily(model.type),
   ]
     .join(" ")
     .toLowerCase();
@@ -175,25 +169,17 @@ function isScreenshotMode() {
   return new URLSearchParams(window.location.search).get("screenshot") === "1";
 }
 
-function getLatestCheckTimestamp(timelines: ProviderTimeline[]) {
-  const timestamps = timelines
-    .map((timeline) => new Date(timeline.latest.checkedAt).getTime())
-    .filter((value) => !Number.isNaN(value));
-  return timestamps.length > 0 ? Math.max(...timestamps) : null;
-}
-
-function computeRemainingMs(
-  pollIntervalMs: number | null | undefined,
-  latestCheckTimestamp: number | null
-) {
-  if (!pollIntervalMs || pollIntervalMs <= 0 || latestCheckTimestamp === null) {
+function computeRemainingMs(nextRefreshAt: number | null) {
+  if (nextRefreshAt === null) {
     return null;
   }
-  return Math.max(0, pollIntervalMs - (Date.now() - latestCheckTimestamp));
+  return Math.max(0, nextRefreshAt - Date.now());
 }
 
-function getOverallStatus(timelines: ProviderTimeline[]): HealthStatus | "unknown" {
-  const statuses = timelines.map((timeline) => timeline.latest.status);
+function getOverallChannelStatus(channels: DashboardChannel[]): HealthStatus | "unknown" {
+  const statuses = channels.flatMap((channel) =>
+    channel.models.map((model) => model.status)
+  );
   if (statuses.length === 0) {
     return "unknown";
   }
@@ -228,6 +214,26 @@ function getAvailabilityColor(pct: number | null | undefined) {
   return "text-rose-600 dark:text-rose-300";
 }
 
+function getModelStatusClasses(model: DashboardChannelModel) {
+  if (
+    (model.status === "operational" || model.status === "degraded") &&
+    typeof model.latencyMs === "number"
+  ) {
+    const isSlow = model.latencyMs > 8_000;
+    return {
+      pill: isSlow
+        ? STATUS_PILL_CLASS.degraded
+        : STATUS_PILL_CLASS.operational,
+      dot: isSlow ? STATUS_DOT_CLASS.degraded : STATUS_DOT_CLASS.operational,
+    };
+  }
+
+  return {
+    pill: STATUS_PILL_CLASS[model.status] ?? "border-border bg-muted text-muted-foreground",
+    dot: STATUS_DOT_CLASS[model.status] ?? "bg-muted-foreground",
+  };
+}
+
 function CornerPlus({ className }: { className?: string }) {
   return (
     <svg
@@ -251,14 +257,14 @@ function PeriodSwitch({
   setPeriod: (period: AvailabilityPeriod) => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/80 p-1 shadow-sm">
+    <div className="inline-flex h-8 items-center gap-0.5 rounded-full border border-border/70 bg-background/75 p-0.5">
       {PERIODS.map((item) => (
         <button
           key={item.value}
           type="button"
           onClick={() => setPeriod(item.value)}
           className={cn(
-            "rounded-full px-3 py-1.5 text-xs font-semibold transition",
+            "h-7 rounded-full px-2.5 text-xs font-semibold transition",
             period === item.value
               ? "bg-foreground text-background"
               : "text-muted-foreground hover:text-foreground"
@@ -313,15 +319,15 @@ function ProviderFamilySwitch({
   }, [isOpen]);
 
   return (
-    <div ref={rootRef} className="relative min-w-[180px]">
+    <div ref={rootRef} className="relative min-w-[150px]">
       <button
         type="button"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        aria-label={`Provider 筛选 ${activeLabel}`}
+        aria-label={`模型类型筛选 ${activeLabel}`}
         onClick={() => setIsOpen((value) => !value)}
         className={cn(
-          "flex h-10 w-full items-center justify-between gap-3 rounded-full border bg-background px-3.5 text-left text-sm shadow-sm transition",
+          "flex h-8 w-full items-center justify-between gap-2 rounded-full border bg-background/75 px-3 text-left text-sm transition",
           isOpen
             ? "border-foreground/30 ring-4 ring-foreground/5"
             : "border-border/70 hover:border-foreground/25"
@@ -329,14 +335,14 @@ function ProviderFamilySwitch({
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]" />
-          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Provider
+          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            类型
           </span>
           <span className="truncate font-bold text-foreground">{activeLabel}</span>
         </span>
         <ChevronDown
           className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground transition",
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition",
             isOpen && "rotate-180 text-foreground"
           )}
         />
@@ -345,7 +351,7 @@ function ProviderFamilySwitch({
       {isOpen && (
         <div
           role="listbox"
-          aria-label="Provider 筛选"
+          aria-label="模型类型筛选"
           className="absolute left-0 top-12 z-30 w-full min-w-[220px] overflow-hidden rounded-2xl border border-border/70 bg-background/95 p-1.5 shadow-xl shadow-foreground/10 backdrop-blur"
         >
           {options.map((option) => {
@@ -427,123 +433,149 @@ function StatusHistory({ items }: { items: TimelineItem[] }) {
   );
 }
 
-function ProviderRow({
-  timeline,
+function historyToTimelineItems(
+  model: DashboardChannelModel
+): TimelineItem[] {
+  return model.history.map((item) => ({
+    id: model.id,
+    name: model.name,
+    type: model.type,
+    endpoint: model.model,
+    model: model.model,
+    status: item.status,
+    latencyMs: item.latencyMs,
+    pingLatencyMs: null,
+    checkedAt: item.checkedAt,
+    message: "",
+  }));
+}
+
+function ChannelModelRow({
+  model,
   period,
-  availability,
 }: {
-  timeline: ProviderTimeline;
+  model: DashboardChannelModel;
   period: AvailabilityPeriod;
-  availability: AvailabilityStat | null;
 }) {
-  const latest = timeline.latest;
-  const statusClass =
-    STATUS_PILL_CLASS[latest.status] ?? "border-border bg-muted text-muted-foreground";
-  const availabilityPct = availability?.availabilityPct ?? null;
+  const statusClasses = getModelStatusClasses(model);
+  const availabilityPct = model.availability[period] ?? null;
   const availabilityLabel =
     availabilityPct === null ? "—" : `${availabilityPct.toFixed(2)}%`;
+  const officialStatusMessage = model.officialStatus?.message;
+  const shouldShowOfficialStatus =
+    model.status !== "operational" && Boolean(officialStatusMessage);
 
   return (
-    <article className="group relative flex min-h-[360px] flex-col overflow-hidden rounded-3xl border border-border/45 bg-background/45 shadow-sm backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-foreground/20 hover:shadow-xl hover:shadow-foreground/5">
-      <CornerPlus className="left-3 top-3 opacity-0 transition-opacity group-hover:opacity-100" />
-      <CornerPlus className="right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100" />
-
-      {latest.officialStatus?.message && (
-        <div className="flex items-start gap-2.5 border-b border-amber-500/25 bg-amber-500/10 px-5 py-3 text-xs text-amber-800 dark:text-amber-300">
+    <article className="group rounded-2xl border border-border/45 bg-background/65 p-4 shadow-sm transition hover:border-foreground/20 hover:shadow-lg hover:shadow-foreground/5">
+      {shouldShowOfficialStatus && (
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>官方状态：{latest.officialStatus.message}</span>
+          <span>官方状态：{officialStatusMessage}</span>
         </div>
       )}
-
-      <div className="flex flex-1 flex-col p-5 sm:p-6">
-        <div className="space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 space-y-3">
-              <h2 className="line-clamp-2 text-2xl font-extrabold leading-tight tracking-normal">
-                {getProviderDisplayName(latest.name)}
-              </h2>
-              <div className="flex flex-wrap items-center gap-3">
-                <div
-                  aria-label={`${PROVIDER_LABEL[latest.type] ?? latest.type} provider`}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-muted/55 shadow-sm ring-1 ring-border/65 transition-transform group-hover:scale-105"
-                >
-                  <ProviderIcon type={latest.type} size={28} className="text-foreground/80" />
-                </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <span className="rounded-md bg-muted px-2 py-0.5 font-semibold text-foreground/70">
-                    {PROVIDER_LABEL[latest.type] ?? latest.type}
-                  </span>
-                  <span className="truncate font-medium">{latest.model}</span>
-                </div>
-              </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(220px,1fr)_140px_minmax(280px,1.4fr)] lg:items-center">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            aria-label={`${PROVIDER_LABEL[model.type] ?? model.type} provider`}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-muted/55 shadow-sm ring-1 ring-border/65"
+          >
+            <ProviderIcon type={model.type} size={26} className="text-foreground/80" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="truncate text-xl font-extrabold leading-tight">
+              {getProviderDisplayName(model.name)}
+            </h2>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span className="rounded-md bg-muted px-2 py-0.5 font-semibold text-foreground/70">
+                {PROVIDER_LABEL[model.type] ?? model.type}
+              </span>
+              <span className="truncate font-medium">{model.model}</span>
             </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
+          <span
+            className={cn(
+              "inline-flex w-fit items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold",
+              statusClasses.pill
+            )}
+          >
             <span
               className={cn(
-                "inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold",
-                statusClass
+                "h-2 w-2 rounded-full",
+                statusClasses.dot
               )}
-            >
-              <span
-                className={cn(
-                  "h-2 w-2 rounded-full",
-                  STATUS_DOT_CLASS[latest.status] ?? "bg-muted-foreground"
-                )}
-              />
-              {STATUS_LABEL[latest.status] ?? latest.status}
-            </span>
-          </div>
+            />
+            {STATUS_LABEL[model.status] ?? model.status}
+          </span>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <div className="rounded-2xl bg-muted/30 p-4 transition-colors group-hover:bg-muted/45">
-            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <Zap className="h-3.5 w-3.5" />
-              首字延迟
-            </div>
-            <div className="mt-2 text-xl font-semibold leading-none">
-              {formatLatency(latest.latencyMs)}
-            </div>
-          </div>
-          <div className="rounded-2xl bg-muted/30 p-4 transition-colors group-hover:bg-muted/45">
-            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <Radio className="h-3.5 w-3.5" />
-              端点 Ping
-            </div>
-            <div className="mt-2 text-xl font-semibold leading-none">
-              {formatLatency(latest.pingLatencyMs)}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 rounded-2xl bg-muted/30 px-4 py-3">
+        <div className="space-y-3">
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                可用性 ({PERIODS.find((item) => item.value === period)?.label ?? period})
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {availability
-                  ? `${availability.operationalCount}/${availability.totalChecks} 成功`
-                  : "暂无数据"}
-              </div>
+            <div className="text-xs text-muted-foreground">
+              可用性 ({PERIODS.find((item) => item.value === period)?.label ?? period})
             </div>
-            <div className={cn("text-2xl font-black", getAvailabilityColor(availabilityPct))}>
+            <div className={cn("text-lg font-black", getAvailabilityColor(availabilityPct))}>
               {availabilityLabel}
             </div>
           </div>
-        </div>
-
-        <div className="mt-auto border-t border-border/35 pt-5">
-          <StatusHistory items={timeline.items} />
+          <StatusHistory items={historyToTimelineItems(model)} />
         </div>
       </div>
 
-      {latest.message && latest.message !== "OK" && (
-        <div className="border-t border-border/45 bg-muted/20 px-5 py-3 text-xs text-muted-foreground">
-          {latest.message}
+      {model.message && model.message !== "OK" && (
+        <div className="mt-3 rounded-xl bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
+          {model.message}
         </div>
       )}
     </article>
+  );
+}
+
+function ChannelSection({
+  channel,
+  period,
+}: {
+  channel: DashboardChannel;
+  period: AvailabilityPeriod;
+}) {
+  return (
+    <section className="rounded-3xl border border-border/55 bg-background/45 p-4 shadow-sm backdrop-blur-xl sm:p-5">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-foreground text-background">
+            <Activity className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="truncate text-2xl font-black tracking-tight">
+              {channel.name}
+            </h2>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {channel.models.length} 个模型
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {channel.statusPageUrl && (
+            <a
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+              href={channel.statusPageUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              官方状态页
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
+      </div>
+      <div className="space-y-3">
+        {channel.models.map((model) => (
+          <ChannelModelRow key={model.id} model={model} period={period} />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -569,6 +601,7 @@ export function DashboardIsland() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(null);
+  const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null);
   const requestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -598,6 +631,11 @@ export function DashboardIsland() {
         return;
       }
       setData(nextData);
+      setNextRefreshAt(
+        nextData.pollIntervalMs && nextData.pollIntervalMs > 0
+          ? Date.now() + nextData.pollIntervalMs
+          : null
+      );
       setErrorMessage(null);
     } catch (error) {
       if (controller.signal.aborted) {
@@ -631,25 +669,18 @@ export function DashboardIsland() {
     return () => window.clearInterval(interval);
   }, [data?.pollIntervalMs, loadDashboard]);
 
-  const latestCheckTimestamp = useMemo(
-    () => getLatestCheckTimestamp(data?.providerTimelines ?? []),
-    [data?.providerTimelines]
-  );
-
   useEffect(() => {
-    if (!data?.pollIntervalMs || latestCheckTimestamp === null) {
+    if (nextRefreshAt === null) {
       setTimeToNextRefresh(null);
       return;
     }
     const update = () => {
-      setTimeToNextRefresh(
-        computeRemainingMs(data.pollIntervalMs, latestCheckTimestamp)
-      );
+      setTimeToNextRefresh(computeRemainingMs(nextRefreshAt));
     };
     update();
     const interval = window.setInterval(update, 1000);
     return () => window.clearInterval(interval);
-  }, [data?.pollIntervalMs, latestCheckTimestamp]);
+  }, [nextRefreshAt]);
 
   const providerFamilies = useMemo(() => getProviderFamilies(data), [data]);
   const activeProviderFamily = useMemo(() => {
@@ -663,20 +694,24 @@ export function DashboardIsland() {
       ) ?? providerFamily
     );
   }, [providerFamilies, providerFamily]);
-  const timelines = useMemo(() => {
-    return (data?.providerTimelines ?? [])
-      .filter((timeline) => {
-        if (activeProviderFamily === "all") {
-          return true;
-        }
-        return getProviderFamily(timeline.latest.type).toLowerCase() ===
-          activeProviderFamily.toLowerCase();
-      })
-      .filter((timeline) => matchesSearch(timeline, query))
-      .sort((left, right) => left.latest.name.localeCompare(right.latest.name));
+  const channels = useMemo(() => {
+    return (data?.channels ?? [])
+      .map((channel) => ({
+        ...channel,
+        models: channel.models
+          .filter((model) => {
+            if (activeProviderFamily === "all") {
+              return true;
+            }
+            return getProviderFamily(model.type).toLowerCase() ===
+              activeProviderFamily.toLowerCase();
+          })
+          .filter((model) => matchesModel(model, query))
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      }))
+      .filter((channel) => channel.models.length > 0);
   }, [activeProviderFamily, data, query]);
-  const siteInfo = useMemo(() => getSiteInfo(data), [data]);
-  const overallStatus = getOverallStatus(timelines);
+  const overallStatus = getOverallChannelStatus(channels);
   const overallLabel =
     overallStatus === "unknown" ? "暂无数据" : STATUS_LABEL[overallStatus] ?? overallStatus;
   const countdown = formatCountdown(timeToNextRefresh);
@@ -691,75 +726,91 @@ export function DashboardIsland() {
       <CornerPlus className="fixed bottom-4 left-4 hidden h-6 w-6 text-border md:block" />
       <CornerPlus className="fixed bottom-4 right-4 hidden h-6 w-6 text-border md:block" />
 
-      <header className="relative z-10 flex flex-col gap-7 py-6 md:py-10">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-foreground text-background">
-                <Activity className="h-4 w-4" />
-              </div>
-              <span className="text-xs font-bold uppercase tracking-[0.28em] text-muted-foreground">
-                Status Page
-              </span>
-            </div>
-            <div className="space-y-3">
-              <h1 className="text-5xl font-black tracking-normal text-foreground md:text-7xl">
-                {SITE_DISPLAY_NAME}
-              </h1>
-              <div className="flex flex-wrap items-center gap-2">
-                {siteInfo?.websiteUrl && (
-                  <a
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium text-muted-foreground transition hover:text-foreground"
-                    href={siteInfo.websiteUrl}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {siteInfo.websiteUrl}
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+      <header className="relative z-10">
+        <div className="rounded-2xl border border-border/65 bg-background/90 px-4 py-3 shadow-sm backdrop-blur-xl sm:px-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              {data?.site?.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt={data.site.siteName}
+                  className="h-10 w-fit max-w-[210px] object-contain sm:h-12"
+                  src={data.site.logoUrl}
+                />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-foreground text-background">
+                  <Activity className="h-5 w-5" />
+                </div>
+              )}
+              <div className="min-w-0 border-l border-border pl-3">
+                <h1 className="text-2xl font-black leading-none tracking-[-0.045em] text-foreground sm:text-3xl">
+                  Status
+                </h1>
+                {data?.site?.description && (
+                  <p className="mt-1 max-w-[52ch] truncate text-xs text-muted-foreground sm:text-sm">
+                    {data.site.description}
+                  </p>
                 )}
               </div>
             </div>
-          </div>
 
-          <div className="flex flex-col items-start gap-3 lg:items-end">
-            <span
-              className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold",
-                overallStatus === "unknown"
-                  ? "border-border bg-muted text-muted-foreground"
-                  : STATUS_PILL_CLASS[overallStatus]
-              )}
-            >
+            <div className="flex flex-wrap items-center gap-2">
               <span
                 className={cn(
-                  "h-2.5 w-2.5 rounded-full",
+                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-black",
                   overallStatus === "unknown"
-                    ? "bg-muted-foreground"
-                    : STATUS_DOT_CLASS[overallStatus]
+                    ? "border-border bg-muted text-muted-foreground"
+                    : STATUS_PILL_CLASS[overallStatus]
                 )}
-              />
-              {overallLabel}
-            </span>
-            <div className="text-xs text-muted-foreground">
-              更新于 {formatTime(data?.lastUpdated)}
-              {countdown ? ` · 下次检查 ${countdown}` : ""}
+              >
+                <span
+                  className={cn(
+                    "h-2.5 w-2.5 rounded-full",
+                    overallStatus === "unknown"
+                      ? "bg-muted-foreground"
+                      : STATUS_DOT_CLASS[overallStatus]
+                  )}
+                />
+                {overallLabel}
+              </span>
+              <span className="rounded-full border border-border/70 bg-background px-3 py-1.5 text-sm text-muted-foreground">
+                最近更新 <strong className="text-foreground">{formatTime(data?.lastUpdated)}</strong>
+              </span>
+              {countdown && (
+                <span className="rounded-full border border-border/70 bg-background px-3 py-1.5 text-sm text-muted-foreground">
+                  下次检查 <strong className="text-foreground">{countdown}</strong>
+                </span>
+              )}
+              <span className="rounded-full border border-border/70 bg-background px-3 py-1.5 text-sm text-muted-foreground">
+                模型 <strong className="text-foreground">{data?.total ?? 0}</strong>
+              </span>
+              {data?.site?.publicOrigin && (
+                <a
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 py-1.5 text-sm font-semibold text-foreground transition hover:border-foreground/25"
+                  href={data.site.publicOrigin}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  官网
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </a>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/80 p-3 shadow-sm lg:flex-row lg:items-center">
-        <label className="relative block min-w-0 flex-1">
-          <span className="sr-only">搜索 Provider、模型或端点</span>
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/55 bg-background/45 p-2">
+        <label className="relative block min-w-[220px] flex-[1_1_280px]">
+          <span className="sr-only">搜索模型、类型或端点</span>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             id="provider-search"
             name="provider-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索 Provider、模型或端点"
-            className="h-10 w-full rounded-full border border-border bg-background pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-foreground/40"
+            placeholder="搜索模型、类型或端点"
+            className="h-8 w-full rounded-full border border-border bg-background/75 pl-8 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-foreground/40"
           />
         </label>
         <ProviderFamilySwitch
@@ -771,9 +822,9 @@ export function DashboardIsland() {
         <button
           type="button"
           onClick={() => loadDashboard()}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-semibold transition hover:border-foreground/40"
+          className="inline-flex h-8 items-center justify-center gap-2 rounded-full border border-border bg-background/75 px-3 text-sm font-semibold transition hover:border-foreground/40"
         >
-          <RefreshCcw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+          <RefreshCcw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
           刷新
         </button>
       </div>
@@ -786,26 +837,16 @@ export function DashboardIsland() {
 
       {isLoading && !data ? (
         <LoadingState />
-      ) : timelines.length === 0 ? (
+      ) : channels.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-border/70 bg-background/75 p-12 text-center text-sm text-muted-foreground">
-          暂无匹配的健康检查快照
+          {(data?.channels ?? []).length === 0
+            ? "暂无监控模型"
+            : "当前筛选下没有匹配的模型"}
         </div>
       ) : (
-        <div
-          className={cn(
-            "grid gap-6",
-            timelines.length === 1
-              ? "max-w-xl md:max-w-2xl"
-              : "md:grid-cols-2 xl:grid-cols-3"
-          )}
-        >
-          {timelines.map((timeline) => (
-            <ProviderRow
-              key={timeline.id}
-              timeline={timeline}
-              period={period}
-              availability={getAvailabilityStat(data, timeline, period)}
-            />
+        <div className="space-y-6">
+          {channels.map((channel) => (
+            <ChannelSection key={channel.id} channel={channel} period={period} />
           ))}
         </div>
       )}

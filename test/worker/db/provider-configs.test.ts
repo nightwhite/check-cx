@@ -52,6 +52,9 @@ describe("provider config repository", () => {
       "INSERT INTO check_models (id, type, model, template_id, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?, ?)"
     ).run("model-1", "openai", "gpt-4o-mini", "template-1", 1, 1);
     db.prepare(
+      "INSERT INTO channels (id, name, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?)"
+    ).run("channel-1", "OpenAI Official", 1, 1);
+    db.prepare(
       "INSERT INTO check_configs (id, name, type, model_id, endpoint, api_key_ciphertext, api_key_nonce, api_key_version, enabled, is_maintenance, group_name, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).run(
       "config-1",
@@ -77,12 +80,20 @@ describe("provider config repository", () => {
         name: "OpenAI primary",
         type: "openai",
         endpoint: "https://api.openai.com/v1/chat/completions",
+        apiFormat: "chat_completions",
         model: "gpt-4o-mini",
         apiKey: "sk-test",
         isMaintenance: false,
         requestHeaders: { "x-custom-header": "1" },
         metadata: { temperature: 0 },
         groupName: "core",
+        channelId: null,
+        channelName: null,
+        channelLogoUrl: null,
+        checkIntervalSeconds: null,
+        effectiveCheckIntervalSeconds: 60,
+        lastCheckedAtMs: null,
+        region: null,
       },
     ]);
   });
@@ -117,6 +128,122 @@ describe("provider config repository", () => {
         id: "config-maintenance",
         apiKey: "",
         isMaintenance: true,
+      }),
+    ]);
+  });
+
+  it("loads only configs whose effective interval is due", async () => {
+    const db = await createMigratedDatabase();
+    const encryptionKey = "0123456789abcdef0123456789abcdef";
+    const encrypted = await encryptProviderKey("sk-test", encryptionKey);
+
+    db.prepare(
+      "UPDATE site_settings SET default_check_interval_seconds = ? WHERE id = 'default'"
+    ).run(60);
+    db.prepare(
+      "INSERT INTO channels (id, name, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?)"
+    ).run("channel-1", "OpenAI Official", 1, 1);
+    db.prepare(
+      "INSERT INTO check_models (id, type, model, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?)"
+    ).run("model-1", "openai", "gpt-4o-mini", 1, 1);
+    db.prepare(
+      `INSERT INTO check_configs (
+         id, name, type, model_id, channel_id, endpoint,
+         api_key_ciphertext, api_key_nonce, api_key_version,
+         enabled, is_maintenance, check_interval_seconds,
+         last_checked_at_ms, region, created_at_ms, updated_at_ms
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "due-override",
+      "Due override",
+      "openai",
+      "model-1",
+      "channel-1",
+      "https://api.openai.com/v1/chat/completions",
+      encrypted.ciphertext,
+      encrypted.nonce,
+      encrypted.version,
+      1,
+      0,
+      30,
+      1_000,
+      "global",
+      1,
+      1
+    );
+    db.prepare(
+      `INSERT INTO check_configs (
+         id, name, type, model_id, channel_id, endpoint,
+         api_key_ciphertext, api_key_nonce, api_key_version,
+         enabled, is_maintenance, check_interval_seconds,
+         last_checked_at_ms, created_at_ms, updated_at_ms
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "not-due-default",
+      "Not due default",
+      "openai",
+      "model-1",
+      "channel-1",
+      "https://api.openai.com/v1/chat/completions",
+      encrypted.ciphertext,
+      encrypted.nonce,
+      encrypted.version,
+      1,
+      0,
+      null,
+      70_000,
+      1,
+      1
+    );
+    db.prepare(
+      `INSERT INTO check_configs (
+         id, name, type, model_id, channel_id, endpoint,
+         api_key_ciphertext, api_key_nonce, api_key_version,
+         enabled, is_maintenance, check_interval_seconds,
+         last_checked_at_ms, created_at_ms, updated_at_ms
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "due-default",
+      "Due default",
+      "openai",
+      "model-1",
+      "channel-1",
+      "https://api.openai.com/v1/chat/completions",
+      encrypted.ciphertext,
+      encrypted.nonce,
+      encrypted.version,
+      1,
+      0,
+      null,
+      1_000,
+      1,
+      1
+    );
+
+    const configs = await loadEnabledProviderConfigs(
+      new D1SqliteAdapter(db),
+      encryptionKey,
+      90_000
+    );
+
+    expect(configs.map((config) => config.id)).toEqual([
+      "due-default",
+      "due-override",
+    ]);
+    expect(configs).toEqual([
+      expect.objectContaining({
+        id: "due-default",
+        effectiveCheckIntervalSeconds: 60,
+        lastCheckedAtMs: 1_000,
+      }),
+      expect.objectContaining({
+        id: "due-override",
+        channelId: "channel-1",
+        channelName: "OpenAI Official",
+        checkIntervalSeconds: 30,
+        effectiveCheckIntervalSeconds: 30,
+        lastCheckedAtMs: 1_000,
+        region: "global",
       }),
     ]);
   });

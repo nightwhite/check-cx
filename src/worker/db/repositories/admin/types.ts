@@ -1,6 +1,7 @@
 import type { EncryptedProviderKey } from "../../../crypto/provider-key";
 
 export type AdminProviderType = "openai" | "gemini" | "anthropic";
+export type AdminApiFormat = "chat_completions" | "responses";
 export type AdminNotificationLevel = "info" | "warning" | "error";
 
 export interface AdminD1Statement {
@@ -42,10 +43,16 @@ export interface AdminConfigRecord {
   model: string;
   templateId: string | null;
   templateName: string | null;
+  channelId: string | null;
+  channelName: string | null;
+  channelLogoUrl: string | null;
   endpoint: string;
+  apiFormat?: AdminApiFormat;
   enabled: boolean;
   isMaintenance: boolean;
   groupName: string | null;
+  checkIntervalSeconds: number | null;
+  region: string | null;
   hasApiKey: boolean;
   createdAtMs: number;
   updatedAtMs: number;
@@ -66,6 +73,49 @@ export interface AdminNotificationRecord {
   level: AdminNotificationLevel;
   isActive: boolean;
   createdAtMs: number;
+}
+
+export interface AdminSiteSettingsRecord {
+  id: "default";
+  siteName: string;
+  statusTitle: string;
+  description: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  publicOrigin: string | null;
+  defaultCheckIntervalSeconds: number;
+  notificationCooldownSeconds: number;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface AdminChannelRecord {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  websiteUrl: string | null;
+  statusPageUrl: string | null;
+  sortOrder: number;
+  enabled: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface AdminNotificationSettingsRecord {
+  id: "default";
+  enabled: boolean;
+  hasWebhookUrl: boolean;
+  notifyDegraded: boolean;
+  notifyFailed: boolean;
+  notifyRecovered: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface InternalNotificationSettingsRecord
+  extends AdminNotificationSettingsRecord {
+  larkWebhookCiphertext: string | null;
+  larkWebhookNonce: string | null;
 }
 
 export interface CreateAdminTemplateInput {
@@ -94,11 +144,15 @@ export interface CreateAdminConfigInput {
   name: string;
   type: AdminProviderType;
   modelId: string;
+  channelId: string;
   endpoint: string;
+  apiFormat?: AdminApiFormat;
   encryptedKey: EncryptedProviderKey;
   enabled: boolean;
   isMaintenance: boolean;
   groupName: string | null;
+  checkIntervalSeconds: number | null;
+  region: string | null;
   nowMs: number;
 }
 
@@ -106,10 +160,14 @@ export interface UpdateAdminConfigInput {
   name: string;
   type: AdminProviderType;
   modelId: string;
+  channelId: string;
   endpoint: string;
+  apiFormat?: AdminApiFormat;
   enabled: boolean;
   isMaintenance: boolean;
   groupName: string | null;
+  checkIntervalSeconds: number | null;
+  region: string | null;
   nowMs: number;
 }
 
@@ -135,6 +193,36 @@ export type UpdateAdminNotificationInput = Omit<
   CreateAdminNotificationInput,
   "id" | "nowMs"
 >;
+
+export type UpdateAdminSiteSettingsInput = Omit<
+  AdminSiteSettingsRecord,
+  "id" | "createdAtMs" | "updatedAtMs"
+> & {
+  nowMs: number;
+};
+
+export interface CreateAdminChannelInput {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  websiteUrl: string | null;
+  statusPageUrl: string | null;
+  sortOrder: number;
+  enabled: boolean;
+  nowMs: number;
+}
+
+export type UpdateAdminChannelInput = Omit<CreateAdminChannelInput, "id">;
+
+export interface UpdateAdminNotificationSettingsInput {
+  larkWebhookCiphertext: string | null;
+  larkWebhookNonce: string | null;
+  enabled: boolean;
+  notifyDegraded: boolean;
+  notifyFailed: boolean;
+  notifyRecovered: boolean;
+  nowMs: number;
+}
 
 export interface AdminRuntimeStatus {
   cron: {

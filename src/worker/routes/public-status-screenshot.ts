@@ -3,6 +3,7 @@ import { launch, type BrowserWorker } from "@cloudflare/puppeteer";
 import type { TrendPeriod } from "./trend-period";
 
 const SCREENSHOT_READY_SELECTOR = "[data-dashboard-ready='true']";
+const IMAGES_READY_SCRIPT = `Array.from(document.images).every((image) => image.complete && image.naturalWidth > 0)`;
 
 export function normalizePublicOrigin(value: string | undefined): string | null {
   if (!value || value.trim().length === 0) {
@@ -48,6 +49,7 @@ export async function renderPublicStatusScreenshotPng(
       waitUntil: "domcontentloaded",
     });
     await page.waitForSelector(SCREENSHOT_READY_SELECTOR, { timeout: 10_000 });
+    await page.waitForFunction(IMAGES_READY_SCRIPT, { timeout: 10_000 });
 
     return await page.screenshot({
       type: "png",

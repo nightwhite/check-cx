@@ -16,6 +16,24 @@ interface GroupInfoRow {
   tags: string | null;
 }
 
+interface ChannelRow {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  website_url: string | null;
+  status_page_url: string | null;
+  sort_order: number;
+  enabled: number;
+}
+
+interface SiteSettingsRow {
+  site_name: string;
+  status_title: string;
+  description: string | null;
+  logo_url: string | null;
+  public_origin: string | null;
+}
+
 interface AvailabilityRow {
   config_id: string;
   period: string;
@@ -48,6 +66,9 @@ class FakeStatement implements D1StatementLike {
   }
 
   async first<T>() {
+    if (this.query.includes("FROM site_settings")) {
+      return this.db.siteSettingsRow as T;
+    }
     const key = `${String(this.values[0])}:${String(this.values[1])}`;
     return (this.db.rows.get(key) ?? null) as T | null;
   }
@@ -102,6 +123,10 @@ class FakeStatement implements D1StatementLike {
 
     if (this.query.includes("FROM official_status_snapshots")) {
       return { results: this.db.officialStatusRows as T[] };
+    }
+
+    if (this.query.includes("FROM channels")) {
+      return { results: this.db.channelRows as T[] };
     }
 
     return { results: this.db.groupInfos as T[] };
@@ -193,6 +218,24 @@ class FakeD1 implements D1Executor {
       tags: "prod,core",
     },
   ];
+  readonly channelRows: ChannelRow[] = [
+    {
+      id: "channel-core",
+      name: "Core Channel",
+      logo_url: null,
+      website_url: "https://core.example",
+      status_page_url: "https://status.core.example",
+      sort_order: 10,
+      enabled: 1,
+    },
+  ];
+  readonly siteSettingsRow: SiteSettingsRow = {
+    site_name: "AI Status",
+    status_title: "AI Channel Status",
+    description: "Production AI status",
+    logo_url: "https://example.com/logo.png",
+    public_origin: "https://status.example.com",
+  };
   readonly availabilityRows: AvailabilityRow[] = [
     {
       config_id: "core-1",
@@ -266,6 +309,8 @@ function createResult(id: string, groupName: string | null): WorkerCheckResult {
     checkedAt: "2026-05-02T00:00:00.000Z",
     message: "OK",
     groupName,
+    channelId: id === "core-1" ? "channel-core" : null,
+    channelName: id === "core-1" ? "Core Channel" : null,
   };
 }
 
@@ -312,6 +357,35 @@ describe("writeDashboardSnapshot", () => {
         websiteUrl: "https://core.example",
         tags: "prod,core",
       },
+    ]);
+    expect(dashboardPayload.site).toEqual({
+      siteName: "AI Status",
+      statusTitle: "AI Channel Status",
+      description: "Production AI status",
+      logoUrl: "https://example.com/logo.png",
+      publicOrigin: "https://status.example.com",
+    });
+    expect(dashboardPayload.channels).toEqual([
+      expect.objectContaining({
+        id: "channel-core",
+        name: "Core Channel",
+        websiteUrl: "https://core.example",
+        statusPageUrl: "https://status.core.example",
+        models: [
+          expect.objectContaining({
+            id: "core-1",
+            model: "gpt-4o-mini",
+            status: "operational",
+            officialStatus: {
+              status: "degraded",
+              message: "OpenAI incident",
+              affectedComponents: ["API"],
+              checkedAt: "2026-05-02T00:00:00.000Z",
+            },
+            history: expect.any(Array),
+          }),
+        ],
+      }),
     ]);
     expect(dashboardPayload.availabilityStats["core-1"]).toEqual([
       {

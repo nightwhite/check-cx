@@ -70,12 +70,14 @@ describe("persistCheckResults", () => {
     );
 
     expect(db.batchCalls).toHaveLength(1);
-    expect(db.batchCalls[0]).toHaveLength(4);
+    expect(db.batchCalls[0]).toHaveLength(6);
     expect(db.batchCalls[0].map((statement) => statement.query)).toEqual([
       expect.stringContaining("INSERT INTO check_history"),
       expect.stringContaining("INSERT INTO check_latest"),
+      expect.stringContaining("UPDATE check_configs"),
       expect.stringContaining("INSERT INTO check_history"),
       expect.stringContaining("INSERT INTO check_latest"),
+      expect.stringContaining("UPDATE check_configs"),
     ]);
   });
 
@@ -90,7 +92,7 @@ describe("persistCheckResults", () => {
 
     expect(db.batchCalls.length).toBeGreaterThan(1);
     expect(db.batchCalls.every((call) => call.length <= 100)).toBe(true);
-    expect(db.batchCalls.reduce((sum, call) => sum + call.length, 0)).toBe(150);
+    expect(db.batchCalls.reduce((sum, call) => sum + call.length, 0)).toBe(225);
   });
 
   it("can skip history writes while still updating latest rows", async () => {
@@ -109,8 +111,10 @@ describe("persistCheckResults", () => {
     expect(db.batchCalls).toHaveLength(1);
     expect(db.batchCalls[0].map((statement) => statement.query)).toEqual([
       expect.stringContaining("INSERT INTO check_latest"),
+      expect.stringContaining("UPDATE check_configs"),
       expect.stringContaining("INSERT INTO check_history"),
       expect.stringContaining("INSERT INTO check_latest"),
+      expect.stringContaining("UPDATE check_configs"),
     ]);
   });
 });
