@@ -82,6 +82,28 @@ describe("checkProvider", () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    [30_000, "operational"],
+    [30_001, "degraded"],
+  ])("uses 30 seconds as the degraded threshold", async (latencyMs, status) => {
+    const now = vi
+      .fn<() => number>()
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_000 + latencyMs);
+
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () =>
+        jsonResponse({ choices: [{ message: { content: "8" } }] }),
+      measurePing: async () => null,
+      now,
+    });
+
+    expect(result.latencyMs).toBe(latencyMs);
+    expect(result.status).toBe(status);
+  });
+
   it("preserves channel metadata in check results", async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({ choices: [{ message: { content: "8" } }] })

@@ -28,6 +28,7 @@ const PERIODS: Array<{ value: AvailabilityPeriod; label: string }> = [
   { value: "30d", label: "30 天" },
 ];
 const HISTORY_SEGMENT_COUNT = 60;
+const DEGRADED_THRESHOLD_MS = 30_000;
 
 const STATUS_LABEL: Record<string, string> = {
   operational: "正常",
@@ -219,7 +220,7 @@ function getModelStatusClasses(model: DashboardChannelModel) {
     (model.status === "operational" || model.status === "degraded") &&
     typeof model.latencyMs === "number"
   ) {
-    const isSlow = model.latencyMs > 8_000;
+    const isSlow = model.latencyMs > DEGRADED_THRESHOLD_MS;
     return {
       pill: isSlow
         ? STATUS_PILL_CLASS.degraded
