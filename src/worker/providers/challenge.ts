@@ -6,7 +6,7 @@ export interface ValidationResult {
   valid: boolean;
 }
 
-/** 探活提示词：渠道只要回了任意内容即视为可用。 */
+/** 探活提示词：渠道返回了非空内容即视为可用。 */
 const PROBE_PROMPT = "hi";
 
 export function generateChallenge(): Challenge {
