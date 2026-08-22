@@ -149,6 +149,7 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
         },
       ],
       max_output_tokens: 1,
+      reasoning: { effort: "low" },
       stream: true,
     };
   }

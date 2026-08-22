@@ -320,7 +320,7 @@ describe("checkProvider", () => {
     expect(body.reasoning).toBeUndefined();
   });
 
-  it("uses Responses input messages without reasoning fields", async () => {
+  it("uses Responses input messages with low reasoning effort", async () => {
     const fetcher = vi.fn(async () =>
       textStreamResponse([
         'data: {"type":"response.output_item.added","item":{"type":"reasoning"}}\n\n',
@@ -357,10 +357,10 @@ describe("checkProvider", () => {
         },
       ],
       max_output_tokens: 1,
+      reasoning: { effort: "low" },
       stream: true,
     });
     expect(body.messages).toBeUndefined();
-    expect(body.reasoning).toBeUndefined();
     expect(result.status).toBe("operational");
     expect(result.logMessage).toBe("8");
   });
