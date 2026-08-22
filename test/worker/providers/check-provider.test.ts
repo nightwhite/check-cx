@@ -14,8 +14,7 @@ const baseConfig: WorkerProviderConfig = {
 };
 
 const challenge = {
-  prompt: "1 + 7 = ?",
-  expectedAnswer: "8",
+  prompt: "hi",
 };
 
 const jsonResponse = (body: unknown, init?: ResponseInit) =>
@@ -143,16 +142,28 @@ describe("checkProvider", () => {
     expect(result.message).toContain("500");
   });
 
-  it("returns validation_failed when provider response misses the expected answer", async () => {
+  it("returns validation_failed when provider response is empty", async () => {
     const result = await checkProvider(baseConfig, {
       challenge,
       fetcher: async () =>
-        jsonResponse({ choices: [{ message: { content: "9" } }] }),
+        jsonResponse({ choices: [{ message: { content: "" } }] }),
       measurePing: async () => null,
       now: () => 1_000,
     });
 
     expect(result.status).toBe("validation_failed");
+  });
+
+  it("returns operational for any non-empty reply", async () => {
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () =>
+        jsonResponse({ choices: [{ message: { content: "ping" } }] }),
+      measurePing: async () => null,
+      now: () => 1_000,
+    });
+
+    expect(result.status).toBe("operational");
   });
 
   it("returns failed when fetch throws", async () => {

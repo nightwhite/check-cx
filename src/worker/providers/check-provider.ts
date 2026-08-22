@@ -401,7 +401,7 @@ export async function checkProvider(
       const payload = await response.json();
       text = extractResponseText(payload);
     }
-    const validation = validateResponse(text, challenge.expectedAnswer);
+    const validation = validateResponse(text);
     const status: WorkerHealthStatus = validation.valid
       ? latencyMs > DEGRADED_THRESHOLD_MS
         ? "degraded"
@@ -413,7 +413,7 @@ export async function checkProvider(
         config,
         status,
         checkedAtMs,
-        validation.valid ? "OK" : "响应校验失败"
+        validation.valid ? "OK" : "响应为空"
       ),
       latencyMs,
       pingLatencyMs,
