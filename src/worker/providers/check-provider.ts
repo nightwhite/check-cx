@@ -10,8 +10,10 @@ import type {
   WorkerProviderConfig,
 } from "./types";
 
-const DEFAULT_TIMEOUT_MS = 45_000;
-const DEGRADED_THRESHOLD_MS = 6_000;
+/** Provider 请求默认超时时间：120 秒。 */
+const DEFAULT_TIMEOUT_MS = 120_000;
+/** 成功但超过此延迟的请求标记为 degraded。 */
+const DEGRADED_THRESHOLD_MS = 30_000;
 const RESERVED_METADATA_KEYS = new Set([
   "contents",
   "generationConfig",

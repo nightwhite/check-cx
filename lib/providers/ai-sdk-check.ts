@@ -34,11 +34,11 @@ import { measureEndpointPing } from "./endpoint-ping";
  * 常量定义
  * ============================================================================ */
 
-/** 默认超时时间（毫秒）- 45 秒，兼顾慢速模型的首次响应 */
-const DEFAULT_TIMEOUT_MS = 45_000;
+/** 默认超时时间（毫秒）- 120 秒，兼顾慢速模型的首次响应 */
+const DEFAULT_TIMEOUT_MS = 120_000;
 
-/** 性能降级阈值（毫秒）- 超过此值标记为 degraded 状态 */
-const DEGRADED_THRESHOLD_MS = 6_000;
+/** 性能降级阈值（毫秒）- 超过 30 秒标记为 degraded 状态 */
+const DEGRADED_THRESHOLD_MS = 30_000;
 
 /** 需要从 metadata 中排除的字段，这些字段会与 streamText 内部参数冲突 */
 const EXCLUDED_METADATA_KEYS = new Set(["model", "prompt", "messages", "abortSignal"]);
@@ -488,8 +488,8 @@ function buildCheckResult(
  * 4. 根据延迟和验证结果判定健康状态
  *
  * 状态判定规则：
- * - operational：请求成功、验证通过、延迟 ≤ 6000ms
- * - degraded：请求成功、验证通过、延迟 > 6000ms
+ * - operational：请求成功、验证通过、延迟 ≤ 30000ms
+ * - degraded：请求成功、验证通过、延迟 > 30000ms
  * - validation_failed：收到回复但答案验证失败
  * - failed：请求失败、超时或回复为空
  * - error：请求过程中发生异常

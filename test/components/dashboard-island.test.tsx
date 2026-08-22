@@ -515,8 +515,8 @@ describe("DashboardIsland", () => {
   });
 
   it.each([
-    ["keeps the status green at 8 seconds", 8_000, "border-emerald-500/30"],
-    ["turns the status yellow above 8 seconds", 8_001, "border-amber-500/30"],
+    ["keeps the status green at 30 seconds", 30_000, "border-emerald-500/30"],
+    ["turns the status yellow above 30 seconds", 30_001, "border-amber-500/30"],
   ])("%s", async (_label, latencyMs, colorClass) => {
     vi.stubGlobal(
       "fetch",
