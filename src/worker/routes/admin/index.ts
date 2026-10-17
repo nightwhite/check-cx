@@ -12,6 +12,7 @@ import { adminRuntimeRoutes } from "./runtime";
 import { adminSiteSettingsRoutes } from "./site-settings";
 import { adminSummaryRoutes } from "./summary";
 import { adminTemplateRoutes } from "./templates";
+import { createUpstreamModelRoutes } from "./upstream-models";
 
 export const adminRoutes = new Hono<{ Bindings: Env }>();
 
@@ -20,6 +21,7 @@ adminRoutes.use("/*", requireAdminSession);
 adminRoutes.route("/summary", adminSummaryRoutes);
 adminRoutes.route("/site-settings", adminSiteSettingsRoutes);
 adminRoutes.route("/channels", adminChannelRoutes);
+adminRoutes.route("/channels", createUpstreamModelRoutes());
 adminRoutes.route("/runtime", adminRuntimeRoutes);
 adminRoutes.route("/templates", adminTemplateRoutes);
 adminRoutes.route("/models", adminModelRoutes);

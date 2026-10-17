@@ -32,6 +32,13 @@ interface ChannelCredentialsRow {
   has_api_key: number;
 }
 
+interface ChannelSecretRow {
+  base_url: string | null;
+  api_key_ciphertext: string | null;
+  api_key_nonce: string | null;
+  api_key_version: number | null;
+}
+
 const HAS_API_KEY_SQL = `CASE WHEN api_key_ciphertext IS NOT NULL AND api_key_nonce IS NOT NULL
                     THEN 1 ELSE 0 END AS has_api_key`;
 
@@ -163,6 +170,17 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
       return row
         ? { id: row.id, baseUrl: row.base_url, hasApiKey: bool(row.has_api_key) }
         : null;
+    },
+
+    async findSecret(id: string) {
+      return await db
+        .prepare(
+          `SELECT base_url, api_key_ciphertext, api_key_nonce, api_key_version
+           FROM channels
+           WHERE id = ?`
+        )
+        .bind(id)
+        .first<ChannelSecretRow>();
     },
 
     async configsRequiringChannelKey(id: string) {

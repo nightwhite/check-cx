@@ -10,6 +10,7 @@ import {
 } from "./admin-api";
 import type { AdminChannelRecord } from "./admin-types";
 import { ChannelForm } from "./channel-form";
+import { ImportModelsDialog } from "./import-models-dialog";
 import { DataTable } from "./data-table";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { errorMessage, includesText, useAdminResource } from "./use-admin-resource";
@@ -30,6 +31,7 @@ export function ChannelsView() {
   const [search, setSearch] = React.useState("");
   const [editing, setEditing] = React.useState<AdminChannelRecord | null>(null);
   const [deleting, setDeleting] = React.useState<AdminChannelRecord | null>(null);
+  const [importing, setImporting] = React.useState<AdminChannelRecord | null>(null);
   const [formOpen, setFormOpen] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
@@ -158,6 +160,20 @@ export function ChannelsView() {
                     type="button"
                     variant="outline"
                     size="sm"
+                    disabled={!record.baseUrl || !record.hasApiKey}
+                    title={
+                      record.baseUrl && record.hasApiKey
+                        ? "从上游 /v1/models 获取模型"
+                        : "需先配置 Base URL 与 API Key"
+                    }
+                    onClick={() => setImporting(record)}
+                  >
+                    获取模型
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => {
                       setEditing(record);
                       setFormError(null);
@@ -187,6 +203,15 @@ export function ChannelsView() {
         serverError={formError}
         onOpenChange={setFormOpen}
         onSubmit={save}
+      />
+      <ImportModelsDialog
+        channel={importing}
+        onOpenChange={(open) => {
+          if (!open) {
+            setImporting(null);
+          }
+        }}
+        onImported={() => undefined}
       />
       <DeleteConfirmDialog
         open={Boolean(deleting)}
