@@ -524,17 +524,6 @@ function ChannelSection({
           <HealthMeter channel={channel} />
         </div>
         <div className="flex items-center gap-0.5">
-          {channel.websiteUrl && (
-            <a
-              className={CHANNEL_LINK_CLASS}
-              href={channel.websiteUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              官网
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
           {channel.statusPageUrl && (
             <a
               className={CHANNEL_LINK_CLASS}

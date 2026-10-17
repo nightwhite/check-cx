@@ -700,7 +700,7 @@ describe("DashboardIsland", () => {
     window.localStorage.clear();
   });
 
-  it("shows the channel logo and website link", async () => {
+  it("shows the channel logo fallback and hides the channel website link", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -726,7 +726,7 @@ describe("DashboardIsland", () => {
       screen
         .getAllByRole("link", { name: "官网" })
         .some((link) => link.getAttribute("href") === "https://openai.com/")
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("cycles the theme between system, light and dark", async () => {
