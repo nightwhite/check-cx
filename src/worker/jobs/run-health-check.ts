@@ -5,7 +5,10 @@ import type {
   WorkerProviderConfig,
 } from "../providers";
 import { decryptProviderKey } from "../crypto/provider-key";
-import { loadEnabledProviderConfigs } from "../db/repositories";
+import {
+  loadEnabledProviderConfigs,
+  loadLatestCheckResults,
+} from "../db/repositories";
 import { createJobLockRepository } from "./job-lock";
 import { processNotificationEvents } from "./notification-events";
 import { persistCheckResults } from "./persist-check-results";
@@ -50,6 +53,20 @@ function getConfigEncryptionKey(env: Env): string {
 
 function buildOwnerId(scheduledTime: number): string {
   return `cron-${scheduledTime}-${crypto.randomUUID()}`;
+}
+
+// 合并数据库中全部启用配置的最新结果与本轮结果，本轮结果优先。
+function mergeLatestResults(
+  latestResults: WorkerCheckResult[],
+  results: WorkerCheckResult[]
+): WorkerCheckResult[] {
+  const resultById = new Map(latestResults.map((result) => [result.id, result]));
+  for (const result of results) {
+    resultById.set(result.id, result);
+  }
+  return [...resultById.values()].sort((left, right) =>
+    left.id.localeCompare(right.id)
+  );
 }
 
 function isHistoryResult(result: WorkerCheckResult): boolean {
@@ -213,7 +230,11 @@ export async function runHealthCheckJob(
       await writeOfficialStatusSnapshots(env.DB);
     }
     if (results.length > 0) {
-      await writeDashboardSnapshot(env.DB, results, snapshotAtMs);
+      const snapshotResults = mergeLatestResults(
+        await loadLatestCheckResults(env.DB),
+        results
+      );
+      await writeDashboardSnapshot(env.DB, snapshotResults, snapshotAtMs);
     }
     if (shouldPruneCheckHistory(scheduledTime)) {
       await pruneCheckHistory(env.DB, snapshotAtMs);
