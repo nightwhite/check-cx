@@ -19,6 +19,7 @@ interface ProviderConfigRow {
   name: string;
   type: string;
   endpoint: string;
+  host_header: string | null;
   api_format: WorkerProviderConfig["apiFormat"];
   api_key_ciphertext: string | null;
   api_key_nonce: string | null;
@@ -159,6 +160,7 @@ export async function loadEnabledProviderConfigs(
          c.name,
          c.type,
          c.endpoint,
+         c.host_header,
          c.api_format,
          c.api_key_ciphertext,
          c.api_key_nonce,
@@ -208,6 +210,7 @@ export async function loadEnabledProviderConfigs(
         name: row.name,
         type: assertProviderType(row.type),
         endpoint,
+        hostHeader: row.host_header,
         apiFormat: row.api_format,
         model: row.model,
         apiKey,

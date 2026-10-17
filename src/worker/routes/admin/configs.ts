@@ -35,6 +35,10 @@ function baseConfigPayload(body: Record<string, unknown>, now = nowMs()) {
   if (region && region.length > 80) {
     throw new AdminValidationError("Region / 备注不能超过 80 个字符");
   }
+  const hostHeader = optionalString(body, "hostHeader");
+  if (hostHeader && (hostHeader.length > 255 || /[:/]/.test(hostHeader))) {
+    throw new AdminValidationError("直连 Host 只能是域名，不能包含端口或路径");
+  }
 
   return {
     name: requiredString(body, "name", "配置名称"),
@@ -43,6 +47,7 @@ function baseConfigPayload(body: Record<string, unknown>, now = nowMs()) {
     channelId: requiredString(body, "channelId", "渠道 ID"),
     // 端点留空表示继承渠道 Base URL，按 API 格式自动拼接。
     endpoint: optionalString(body, "endpoint") ?? "",
+    hostHeader,
     apiFormat: apiFormat(optionalString(body, "apiFormat") ?? "chat_completions"),
     enabled: optionalBoolean(body, "enabled", true),
     isMaintenance: optionalBoolean(body, "isMaintenance", false),

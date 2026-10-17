@@ -25,6 +25,7 @@ interface ConfigRow {
   channel_base_url: string | null;
   channel_has_api_key: number | null;
   endpoint: string;
+  host_header: string | null;
   api_format: AdminConfigRecord["apiFormat"];
   enabled: number;
   is_maintenance: number;
@@ -89,6 +90,7 @@ function toRecord(row: ConfigRow): AdminConfigRecord {
     channelName: row.channel_name,
     channelLogoUrl: row.channel_logo_url,
     endpoint: row.endpoint,
+    hostHeader: row.host_header,
     apiFormat: row.api_format,
     enabled: bool(row.enabled),
     isMaintenance: bool(row.is_maintenance),
@@ -119,10 +121,10 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
       await db
         .prepare(
           `INSERT INTO check_configs
-             (id, name, type, model_id, endpoint, api_format, api_key_ciphertext, api_key_nonce,
+             (id, name, type, model_id, endpoint, host_header, api_format, api_key_ciphertext, api_key_nonce,
               api_key_version, enabled, is_maintenance, group_name, channel_id,
               check_interval_seconds, region, created_at_ms, updated_at_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           input.id,
@@ -130,6 +132,7 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
           input.type,
           input.modelId,
           input.endpoint,
+          input.hostHeader,
           input.apiFormat ?? "chat_completions",
           ciphertext,
           nonce,
@@ -165,7 +168,7 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
                   ch.base_url AS channel_base_url,
                   CASE WHEN ch.api_key_ciphertext IS NOT NULL AND ch.api_key_nonce IS NOT NULL
                     THEN 1 ELSE 0 END AS channel_has_api_key,
-                  c.endpoint, c.api_format, c.enabled, c.is_maintenance, c.group_name,
+                  c.endpoint, c.host_header, c.api_format, c.enabled, c.is_maintenance, c.group_name,
                   c.check_interval_seconds, c.region,
                   CASE WHEN c.api_key_ciphertext IS NOT NULL AND c.api_key_nonce IS NOT NULL
                     THEN 1 ELSE 0 END AS has_api_key,
@@ -222,7 +225,7 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
       const result = await db
         .prepare(
           `UPDATE check_configs
-           SET name = ?, type = ?, model_id = ?, endpoint = ?, api_format = ?, enabled = ?,
+           SET name = ?, type = ?, model_id = ?, endpoint = ?, host_header = ?, api_format = ?, enabled = ?,
                is_maintenance = ?, group_name = ?, channel_id = ?,
                check_interval_seconds = ?, region = ?, updated_at_ms = ?
            WHERE id = ?`
@@ -232,6 +235,7 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
           input.type,
           input.modelId,
           input.endpoint,
+          input.hostHeader,
           input.apiFormat ?? "chat_completions",
           input.enabled,
           input.isMaintenance,

@@ -424,6 +424,34 @@ describe("checkProvider", () => {
     expect(result.logMessage).toBe("8");
   });
 
+  it("parses proxy-mangled SSE blocks containing multiple complete events", async () => {
+    const fetcher = vi.fn(async () =>
+      textStreamResponse([
+        // 代理注入 ping 并吞掉分隔符后，同一块内挤进两条完整 data 行
+        'data: {"type":"response.output_text.delta","delta":"Hi."}\n' +
+          'data: {"type":"response.output_text.delta","delta":" How can I help?"}\n\n',
+      ])
+    );
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
+        model: "gpt-5.5",
+      },
+      {
+        challenge,
+        fetcher,
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("Hi. How can I help?");
+  });
+
   it("parses Responses stream events with multi-line data fields", async () => {
     const fetcher = vi.fn(async () =>
       textStreamResponse([
@@ -558,4 +586,258 @@ describe("checkProvider", () => {
     expect(url).toContain(":generateContent");
     expect(url).not.toContain(":streamGenerateContent");
   });
+
+  it("direct TCP mode sends the custom Host header and returns operational", async () => {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    let sent = "";
+    const socket = {
+      readable: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n' +
+                'data: {"type":"response.output_text.delta","delta":"Hi."}\n\n'
+            )
+          );
+          controller.close();
+        },
+      }),
+      writable: new WritableStream<Uint8Array>({
+        write(chunk) {
+          sent += decoder.decode(chunk);
+        },
+      }),
+      close() {},
+    };
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "http://152.53.240.240/v1/responses",
+        hostHeader: "www.example.com",
+        apiFormat: "responses",
+      },
+      {
+        challenge,
+        measurePing: async () => null,
+        now: () => 1_000,
+        openSocket: () => socket,
+      }
+    );
+
+    expect(sent).toContain("Host: www.example.com");
+    expect(sent).toContain("POST /v1/responses HTTP/1.1");
+    expect(sent).toContain("authorization: Bearer secret");
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("Hi.");
+  });
+
+  it("direct TCP mode reports provider HTTP failures", async () => {
+    const encoder = new TextEncoder();
+    const socket = {
+      readable: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n\r\n' +
+                '{"error":{"code":"endpoint_unavailable"}}'
+            )
+          );
+          controller.close();
+        },
+      }),
+      writable: new WritableStream<Uint8Array>({
+        write() {},
+      }),
+      close() {},
+    };
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "http://152.53.240.240/v1/responses",
+        hostHeader: "www.example.com",
+      },
+      {
+        challenge,
+        measurePing: async () => null,
+        now: () => 1_000,
+        openSocket: () => socket,
+      }
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("404");
+  });
+
+  it("direct TCP mode returns validation_failed for empty replies", async () => {
+    const encoder = new TextEncoder();
+    const socket = {
+      readable: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n' +
+                '{"choices":[{"message":{"content":""}}]}'
+            )
+          );
+          controller.close();
+        },
+      }),
+      writable: new WritableStream<Uint8Array>({
+        write() {},
+      }),
+      close() {},
+    };
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "http://152.53.240.240/v1/chat/completions",
+        hostHeader: "www.example.com",
+      },
+      {
+        challenge,
+        measurePing: async () => null,
+        now: () => 1_000,
+        openSocket: () => socket,
+      }
+    );
+
+    expect(result.status).toBe("validation_failed");
+  });
+
+  it("direct TCP mode decodes chunked SSE responses", async () => {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    let sent = "";
+    const sse =
+      'data: {"type":"response.output_text.delta","delta":"Hi."}\n\n' +
+      'data: {"type":"response.output_text.delta","delta":" How can I help?"}\n\n';
+    // 把 SSE 包进 chunked 帧，帧边界故意落在 SSE 事件中间
+    const part1 = sse.slice(0, 40);
+    const part2 = sse.slice(40);
+    const framed =
+      part1.length.toString(16) +
+      "\r\n" +
+      part1 +
+      "\r\n" +
+      part2.length.toString(16) +
+      "\r\n" +
+      part2 +
+      "\r\n" +
+      "0\r\n\r\n";
+    const socket = {
+      readable: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n" +
+                framed
+            )
+          );
+          controller.close();
+        },
+      }),
+      writable: new WritableStream<Uint8Array>({
+        write(chunk) {
+          sent += decoder.decode(chunk);
+        },
+      }),
+      close() {},
+    };
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "http://152.53.240.240/v1/responses",
+        hostHeader: "www.example.com",
+        apiFormat: "responses",
+      },
+      {
+        challenge,
+        measurePing: async () => null,
+        now: () => 1_000,
+        openSocket: () => socket,
+      }
+    );
+
+    expect(sent).toContain("Host: www.example.com");
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("Hi. How can I help?");
+  });
+
+  it("direct TCP mode keeps chunk offsets byte-accurate with multibyte payloads", async () => {
+    const encoder = new TextEncoder();
+    // 回复里带多字节字符（emoji/中文），chunk 边界落在多字节字符中间
+    const sse =
+      'data: {"type":"response.output_text.delta","delta":"你好，世界 🌊"}\n\n' +
+      'data: {"type":"response.output_text.delta","delta":"！"}\n\n';
+    const bytes = encoder.encode(sse);
+    // 17 字节为第一块（刻意切在中文/emoji 的字节序列中间）
+    const splitAt = 17;
+    const part1 = bytes.subarray(0, splitAt);
+    const part2 = bytes.subarray(splitAt);
+    const framed =
+      new TextEncoder().encode(
+        part1.length.toString(16) + "\r\n"
+      );
+    const part2Head = new TextEncoder().encode(
+      "\r\n" + part2.length.toString(16) + "\r\n"
+    );
+    const terminator = new TextEncoder().encode("\r\n0\r\n\r\n");
+    const framedBytes = concatUint8([
+      framed,
+      part1,
+      part2Head,
+      part2,
+      terminator,
+    ]);
+    const headBytes = new TextEncoder().encode(
+      "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
+    );
+    const responseBytes = concatUint8([headBytes, framedBytes]);
+    const socket = {
+      readable: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(responseBytes);
+          controller.close();
+        },
+      }),
+      writable: new WritableStream<Uint8Array>({
+        write() {},
+      }),
+      close() {},
+    };
+
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "http://152.53.240.240/v1/responses",
+        hostHeader: "www.example.com",
+        apiFormat: "responses",
+      },
+      {
+        challenge,
+        measurePing: async () => null,
+        now: () => 1_000,
+        openSocket: () => socket,
+      }
+    );
+
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("你好，世界 🌊！");
+  });
 });
+
+function concatUint8(list: Uint8Array[]): Uint8Array {
+  const total = list.reduce((sum, item) => sum + item.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const item of list) {
+    out.set(item, offset);
+    offset += item.length;
+  }
+  return out;
+}

@@ -47,6 +47,7 @@ export interface AdminConfigRecord {
   channelName: string | null;
   channelLogoUrl: string | null;
   endpoint: string;
+  hostHeader: string | null;
   apiFormat?: AdminApiFormat;
   enabled: boolean;
   isMaintenance: boolean;
@@ -156,6 +157,7 @@ export interface CreateAdminConfigInput {
   modelId: string;
   channelId: string;
   endpoint: string;
+  hostHeader: string | null;
   apiFormat?: AdminApiFormat;
   encryptedKey: EncryptedProviderKey | null;
   enabled: boolean;
@@ -172,6 +174,7 @@ export interface UpdateAdminConfigInput {
   modelId: string;
   channelId: string;
   endpoint: string;
+  hostHeader: string | null;
   apiFormat?: AdminApiFormat;
   enabled: boolean;
   isMaintenance: boolean;

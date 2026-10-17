@@ -39,6 +39,7 @@ export function ConfigForm({
   const [type, setType] = React.useState<AdminProviderType>("openai");
   const [modelId, setModelId] = React.useState("");
   const [endpoint, setEndpoint] = React.useState("");
+  const [hostHeader, setHostHeader] = React.useState("");
   const [apiFormat, setApiFormat] =
     React.useState<AdminApiFormat>("chat_completions");
   const [apiKey, setApiKey] = React.useState("");
@@ -57,6 +58,7 @@ export function ConfigForm({
     setType(record?.type ?? "openai");
     setModelId(record?.modelId ?? "");
     setEndpoint(record?.endpoint ?? "");
+    setHostHeader(record?.hostHeader ?? "");
     setApiFormat(record?.apiFormat ?? "chat_completions");
     setApiKey("");
     setChannelId(record?.channelId ?? "");
@@ -128,6 +130,7 @@ export function ConfigForm({
       modelId,
       channelId,
       endpoint: endpoint.trim(),
+      hostHeader: hostHeader.trim() || null,
       apiFormat,
       enabled,
       isMaintenance,
@@ -229,6 +232,13 @@ export function ConfigForm({
               : "所选渠道未配置 Base URL，请填写 API 端点"}
           </p>
         ) : null}
+        <Field label="直连 Host（可选）">
+          <TextInput
+            value={hostHeader}
+            placeholder="填写后走 TCP 直连，端点须为 http://"
+            onChange={(event) => setHostHeader(event.target.value)}
+          />
+        </Field>
         {!record ? (
           <Field label="API Key（可选，留空继承渠道）" error={errors.apiKey}>
             <TextInput

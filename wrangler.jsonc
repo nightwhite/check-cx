@@ -25,6 +25,10 @@
       "migrations_dir": "drizzle/migrations"
     }
   ],
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:us-west-1"
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

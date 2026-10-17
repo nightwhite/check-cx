@@ -80,6 +80,7 @@ describe("provider config repository", () => {
         name: "OpenAI primary",
         type: "openai",
         endpoint: "https://api.openai.com/v1/chat/completions",
+        hostHeader: null,
         apiFormat: "chat_completions",
         model: "gpt-4o-mini",
         apiKey: "sk-test",

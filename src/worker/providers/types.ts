@@ -14,6 +14,8 @@ export interface WorkerProviderConfig {
   name: string;
   type: WorkerProviderType;
   endpoint: string;
+  /** 直连模式：通过原始 TCP 携带的 Host 头（fetch 无法覆盖 Host）。 */
+  hostHeader?: string | null;
   apiFormat?: WorkerApiFormat;
   model: string;
   apiKey: string;

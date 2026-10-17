@@ -65,6 +65,7 @@ export interface AdminConfigRecord {
   channelName: string | null;
   channelLogoUrl: string | null;
   endpoint: string;
+  hostHeader: string | null;
   apiFormat: AdminApiFormat;
   enabled: boolean;
   isMaintenance: boolean;
