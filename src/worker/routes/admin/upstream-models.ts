@@ -176,6 +176,7 @@ export function createUpstreamModelRoutes(fetcher?: UpstreamFetch) {
             modelId,
             channelId,
             endpoint: "",
+            hostHeader: null,
             apiFormat: item.apiFormat,
             encryptedKey: null,
             enabled: true,
