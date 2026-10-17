@@ -1053,7 +1053,7 @@ export function DashboardIsland() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   alt={data.site.siteName}
-                  className="h-9 w-fit max-w-[180px] shrink-0 object-contain sm:h-12 sm:max-w-[210px]"
+                  className="h-9 w-fit max-w-[180px] shrink-0 object-contain sm:h-12 sm:max-w-[210px] dark:rounded-lg dark:bg-white dark:px-2 dark:py-1"
                   src={data.site.logoUrl}
                 />
               ) : (
@@ -1073,7 +1073,7 @@ export function DashboardIsland() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:shrink-0">
               <span
                 className={cn(
                   "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-black",
