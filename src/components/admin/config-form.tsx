@@ -184,7 +184,14 @@ export function ConfigForm({
           <Field label="模型" error={errors.modelId}>
             <Select
               value={modelId}
-              onChange={(event) => setModelId(event.target.value)}
+              onChange={(event) => {
+                setModelId(event.target.value);
+                // 模型自带类型，选中后同步，避免手动对齐 Provider 类型
+                const picked = models.find((model) => model.id === event.target.value);
+                if (picked) {
+                  setType(picked.type);
+                }
+              }}
             >
               <option value="">选择模型</option>
               {models.map((model) => (

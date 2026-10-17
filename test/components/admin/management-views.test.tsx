@@ -359,6 +359,110 @@ describe("admin management views", () => {
     expect(screen.getByText("Key 已配置")).not.toBeNull();
   });
 
+  it("imports upstream models from a channel and creates monitor configs", async () => {
+    const fetchMock = setupFetch();
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/admin/channels/channel-openai/upstream-models") {
+        return jsonResponse({
+          models: [
+            { id: "claude-opus-5-5", type: "anthropic", ownedBy: null, modelExists: false, monitored: false },
+            { id: "gpt-4o", type: "openai", ownedBy: null, modelExists: true, monitored: true },
+            { id: "gpt-6", type: "openai", ownedBy: null, modelExists: false, monitored: false },
+          ],
+        });
+      }
+      if (path === "/api/admin/channels/channel-openai/import-models") {
+        expect(init?.method).toBe("POST");
+        return jsonResponse(
+          { modelsCreated: 2, modelsReused: 0, configsCreated: 2, configsSkipped: 0 },
+          201
+        );
+      }
+      if (path === "/api/admin/channels") {
+        return jsonResponse([
+          {
+            id: "channel-openai",
+            name: "OpenAI Official",
+            logoUrl: null,
+            websiteUrl: null,
+            statusPageUrl: null,
+            baseUrl: "https://relay.example.com",
+            hasApiKey: true,
+            sortOrder: 0,
+            enabled: true,
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          },
+        ]);
+      }
+      return jsonResponse([]);
+    });
+
+    renderShell("channels");
+
+    fireEvent.click(await screen.findByRole("button", { name: "获取模型" }));
+    const dialog = await screen.findByRole("dialog", { name: "获取上游模型" });
+    await screen.findByText("gpt-6");
+
+    expect(
+      (screen.getByLabelText("选择 gpt-4o") as HTMLInputElement).disabled
+    ).toBe(true);
+    expect(screen.getByText("已监控")).not.toBeNull();
+
+    fireEvent.change(screen.getByLabelText("筛选上游模型"), {
+      target: { value: "gpt" },
+    });
+    expect(screen.queryByText("claude-opus-5-5")).toBeNull();
+    fireEvent.change(screen.getByLabelText("筛选上游模型"), {
+      target: { value: "" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "全选 2" }));
+    expect(dialog.textContent).toContain("已选 2 个");
+    fireEvent.click(screen.getByRole("button", { name: "导入并创建监控项" }));
+
+    await screen.findByText("新增模型 2 个，新增监控项 2 个");
+    const importCall = fetchMock.mock.calls.find(
+      ([path]) => path === "/api/admin/channels/channel-openai/import-models"
+    );
+    expect(JSON.parse(String(importCall?.[1]?.body))).toEqual({
+      createConfigs: true,
+      models: [
+        { model: "claude-opus-5-5", type: "anthropic", apiFormat: "chat_completions" },
+        { model: "gpt-6", type: "openai", apiFormat: "chat_completions" },
+      ],
+    });
+  });
+
+  it("disables model import for channels without credentials", async () => {
+    const fetchMock = setupFetch();
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) =>
+      String(input) === "/api/admin/channels"
+        ? jsonResponse([
+            {
+              id: "channel-bare",
+              name: "Bare",
+              logoUrl: null,
+              websiteUrl: null,
+              statusPageUrl: null,
+              baseUrl: null,
+              hasApiKey: false,
+              sortOrder: 0,
+              enabled: true,
+              createdAtMs: 1,
+              updatedAtMs: 1,
+            },
+          ])
+        : jsonResponse([])
+    );
+
+    renderShell("channels");
+
+    const button = await screen.findByRole("button", { name: "获取模型" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("renders the runtime cron cadence as read-only", async () => {
     setupFetch();
 

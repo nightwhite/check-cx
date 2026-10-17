@@ -146,6 +146,16 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
         .run();
     },
 
+    async existsForChannelModel(channelId: string, modelId: string) {
+      const row = await db
+        .prepare(
+          "SELECT id FROM check_configs WHERE channel_id = ? AND model_id = ? LIMIT 1"
+        )
+        .bind(channelId, modelId)
+        .first<ConfigIdRow>();
+      return Boolean(row);
+    },
+
     async list() {
       const rows = await db
         .prepare(

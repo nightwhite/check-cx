@@ -2,6 +2,7 @@ import type {
   AdminConfigRecord,
   AdminChannelRecord,
   AdminGroupRecord,
+  AdminImportModelsResult,
   AdminModelRecord,
   AdminNotificationRecord,
   AdminNotificationSettingsRecord,
@@ -10,6 +11,7 @@ import type {
   AdminSiteSettingsRecord,
   AdminSummary,
   AdminTemplateRecord,
+  AdminUpstreamModel,
 } from "./admin-types";
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -136,6 +138,28 @@ export async function deleteAdminChannel(id: string): Promise<void> {
   await requestJson<{ ok: boolean }>(`/api/admin/channels/${id}`, {
     method: "DELETE",
   });
+}
+
+export async function listChannelUpstreamModels(
+  channelId: string
+): Promise<AdminUpstreamModel[]> {
+  const body = await requestJson<{ models: AdminUpstreamModel[] }>(
+    `/api/admin/channels/${channelId}/upstream-models`
+  );
+  return body.models;
+}
+
+export async function importChannelModels(
+  channelId: string,
+  payload: {
+    models: Array<{ model: string; type: string; apiFormat: string }>;
+    createConfigs: boolean;
+  }
+): Promise<AdminImportModelsResult> {
+  return requestJson<AdminImportModelsResult>(
+    `/api/admin/channels/${channelId}/import-models`,
+    jsonInit("POST", payload)
+  );
 }
 
 export async function createAdminConfig(

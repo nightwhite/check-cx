@@ -168,3 +168,18 @@ export interface AdminRuntimeStatus {
     updatedAtMs: number;
   } | null;
 }
+
+export interface AdminUpstreamModel {
+  id: string;
+  type: AdminProviderType;
+  ownedBy: string | null;
+  modelExists: boolean;
+  monitored: boolean;
+}
+
+export interface AdminImportModelsResult {
+  modelsCreated: number;
+  modelsReused: number;
+  configsCreated: number;
+  configsSkipped: number;
+}

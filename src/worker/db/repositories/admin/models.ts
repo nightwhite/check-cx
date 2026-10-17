@@ -57,6 +57,13 @@ export function createAdminModelRepository(db: AdminD1Executor) {
         .run();
     },
 
+    async findByTypeAndName(type: string, model: string) {
+      return await db
+        .prepare("SELECT id FROM check_models WHERE type = ? AND model = ?")
+        .bind(type, model)
+        .first<{ id: string }>();
+    },
+
     async list() {
       const rows = await db
         .prepare(
