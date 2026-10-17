@@ -108,6 +108,32 @@ describe("dashboard route", () => {
     expect(cachedResponse.headers.get("ETag")).toBe(etag);
   });
 
+  it("strips providerTimelines when compact=1 and uses a distinct ETag", async () => {
+    const app = createWorkerApp();
+    const env = createEnv({
+      payload_json: JSON.stringify({ total: 1, channels: [], providerTimelines: [{ id: "x" }] }),
+      etag: "\"abc\"",
+      generated_at_ms: 1_000,
+    });
+
+    const response = await app.request(
+      "http://example.com/api/dashboard?trendPeriod=7d&compact=1",
+      {},
+      env
+    );
+
+    await expect(response.json()).resolves.toEqual({ total: 1, channels: [] });
+    expect(response.headers.get("ETag")).toBe("\"abc-c\"");
+    expect(response.headers.get("Cloudflare-CDN-Cache-Control")).toBe("max-age=5");
+
+    const cached = await app.request(
+      "http://example.com/api/dashboard?trendPeriod=7d&compact=1",
+      { headers: { "If-None-Match": "\"abc-c\"" } },
+      env
+    );
+    expect(cached.status).toBe(304);
+  });
+
   it("rejects invalid trendPeriod", async () => {
     const app = createWorkerApp();
 

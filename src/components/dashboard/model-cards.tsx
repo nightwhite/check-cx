@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 
 import type {
@@ -11,15 +12,18 @@ import { ProviderIcon } from "@/components/provider-icon";
 import { cn } from "@/lib/utils";
 
 import {
+  HISTORY_LEGEND,
   HISTORY_SEGMENT_COUNT,
   PROVIDER_LABEL,
   STATUS_DOT_CLASS,
   STATUS_LABEL,
-  formatClock,
+  formatDuration,
+  formatHistoryStart,
   formatLatency,
   formatTime,
   getAvailabilityColor,
   getEffectiveStatus,
+  getHistorySpanMs,
   getModelStatusClasses,
   getPeriodLabel,
   getProviderDisplayName,
@@ -29,46 +33,120 @@ import {
 
 export type ModelViewMode = "grid" | "list";
 
+// 色带下方的说明行：起止时间刻度 + 当前点选格子的详情
+function HistoryCaption({
+  items,
+  selected,
+}: {
+  items: TimelineItem[];
+  selected: TimelineItem | null;
+}) {
+  if (selected) {
+    return (
+      <p
+        aria-live="polite"
+        className="flex min-w-0 items-center gap-1.5 text-[10px] leading-4 text-foreground/80"
+      >
+        <span
+          className={cn(
+            "h-1.5 w-1.5 shrink-0 rounded-full",
+            STATUS_DOT_CLASS[selected.status] ?? "bg-muted-foreground"
+          )}
+        />
+        <span className="truncate tabular-nums">
+          {formatTime(selected.checkedAt)} · {STATUS_LABEL[selected.status] ?? selected.status} · {formatLatency(selected.latencyMs)}
+        </span>
+      </p>
+    );
+  }
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  const visible = items.slice(0, HISTORY_SEGMENT_COUNT);
+  const spanMs = getHistorySpanMs(visible);
+  return (
+    <p className="flex items-center justify-between gap-2 text-[10px] leading-4 tabular-nums text-muted-foreground">
+      <time dateTime={visible[visible.length - 1].checkedAt}>
+        {formatHistoryStart(visible[visible.length - 1].checkedAt, spanMs)}
+      </time>
+      <span className="truncate">
+        {`最近 ${visible.length} 次检查${spanMs > 0 ? ` · ${formatDuration(spanMs)}` : ""}`}
+      </span>
+      <time dateTime={visible[0].checkedAt}>
+        {formatHistoryStart(visible[0].checkedAt, spanMs)}
+      </time>
+    </p>
+  );
+}
+
 export function StatusHistory({
   items,
   className,
+  barClassName,
+  showCaption = true,
 }: {
   items: TimelineItem[];
   className?: string;
+  barClassName?: string;
+  showCaption?: boolean;
 }) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const segments = Array.from(
     { length: HISTORY_SEGMENT_COUNT },
     (_, index) => items[index] ?? null
   );
+  const selected = selectedIndex === null ? null : items[selectedIndex] ?? null;
 
   return (
-    <div className={cn("min-w-0", className)}>
-      <span className="sr-only">
-        最近 {Math.min(items.length, HISTORY_SEGMENT_COUNT)} 次检查
-      </span>
-      <div className="flex h-full flex-row-reverse gap-px">
-        {segments.map((segment, index) => (
-          <span
-            key={segment ? `${segment.id}-${segment.checkedAt}` : `empty-${index}`}
-            aria-label={
-              segment
-                ? `${formatTime(segment.checkedAt)} ${STATUS_LABEL[segment.status] ?? segment.status}`
-                : "暂无数据"
-            }
-            title={
-              segment
-                ? `${formatTime(segment.checkedAt)} · ${STATUS_LABEL[segment.status] ?? segment.status} · ${formatLatency(segment.latencyMs)}`
-                : "暂无数据"
-            }
-            className={cn(
-              "min-w-0 flex-1 rounded-[1.5px] transition-opacity hover:opacity-70",
-              segment
-                ? STATUS_DOT_CLASS[segment.status] ?? "bg-muted-foreground"
-                : "bg-foreground/[0.06]"
-            )}
-          />
-        ))}
+    <div className={cn("min-w-0 space-y-1", className)}>
+      <div
+        role="list"
+        aria-label={`最近 ${Math.min(items.length, HISTORY_SEGMENT_COUNT)} 次检查，左旧右新`}
+        className={cn("flex flex-row-reverse gap-px", barClassName)}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") {
+            setSelectedIndex(null);
+          }
+        }}
+      >
+        {segments.map((segment, index) => {
+          const label = segment
+            ? `${formatTime(segment.checkedAt)} · ${STATUS_LABEL[segment.status] ?? segment.status} · ${formatLatency(segment.latencyMs)}`
+            : "暂无数据";
+          return (
+            <span
+              key={segment ? `${segment.id}-${segment.checkedAt}` : `empty-${index}`}
+              role="listitem"
+              aria-label={label}
+              title={label}
+              // 悬停只响应鼠标；触屏点按会先模拟一次移入，交给 click 统一处理
+              onPointerEnter={
+                segment
+                  ? (event) => {
+                      if (event.pointerType === "mouse") {
+                        setSelectedIndex(index);
+                      }
+                    }
+                  : undefined
+              }
+              onClick={segment ? () => setSelectedIndex(index) : undefined}
+              className={cn(
+                "min-w-0 flex-1 rounded-[1.5px] transition-opacity",
+                segment
+                  ? cn(
+                      STATUS_DOT_CLASS[segment.status] ?? "bg-muted-foreground",
+                      "cursor-pointer",
+                      selectedIndex !== null && selectedIndex !== index && "opacity-40"
+                    )
+                  : "bg-foreground/[0.06]"
+              )}
+            />
+          );
+        })}
       </div>
+      {showCaption && <HistoryCaption items={items} selected={selected} />}
     </div>
   );
 }
@@ -223,7 +301,7 @@ export function ModelTile({
         <StatusBadge model={model} />
       </div>
 
-      <StatusHistory items={historyToTimelineItems(model)} className="h-6" />
+      <StatusHistory items={historyToTimelineItems(model)} barClassName="h-6" />
 
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[11px] leading-4">
         <span className="flex items-baseline gap-1.5">
@@ -239,16 +317,12 @@ export function ModelTile({
             近 {getPeriodLabel(period)}可用性
           </span>
         </span>
-        <span className="flex items-baseline gap-1.5 text-muted-foreground">
+        <span
+          title={`最近检查 ${formatTime(model.checkedAt)}`}
+          className="flex items-baseline gap-1.5 text-muted-foreground"
+        >
+          <span>延迟</span>
           <LatencyValue model={model} />
-          <span aria-hidden="true">·</span>
-          <time
-            dateTime={model.checkedAt}
-            title={`最近检查 ${formatTime(model.checkedAt)}`}
-            className="tabular-nums"
-          >
-            {formatClock(model.checkedAt)}
-          </time>
         </span>
       </div>
 
@@ -291,7 +365,9 @@ export function ModelListRow({
 
       <StatusHistory
         items={historyToTimelineItems(model)}
-        className="order-last col-span-2 h-4 md:order-none md:col-span-1 md:h-5"
+        className="order-last col-span-2 md:order-none md:col-span-1"
+        barClassName="h-4 md:h-5"
+        showCaption={false}
       />
 
       <div className="flex items-center justify-end gap-3 text-[11px] leading-4">
@@ -304,16 +380,12 @@ export function ModelListRow({
         >
           {availabilityPct === null ? "—" : `${availabilityPct.toFixed(2)}%`}
         </strong>
-        <span className="hidden w-16 text-right sm:block">
+        <span
+          title={`最近检查 ${formatTime(model.checkedAt)}`}
+          className="hidden w-16 text-right sm:block"
+        >
           <LatencyValue model={model} />
         </span>
-        <time
-          dateTime={model.checkedAt}
-          title={`最近检查 ${formatTime(model.checkedAt)}`}
-          className="hidden w-14 text-right tabular-nums text-muted-foreground lg:block"
-        >
-          {formatClock(model.checkedAt)}
-        </time>
         <StatusBadge model={model} />
       </div>
 
@@ -329,6 +401,39 @@ export function ModelListRow({
   );
 }
 
+export function HistoryLegend({ className }: { className?: string }) {
+  return (
+    <ul
+      aria-label="色带图例"
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground",
+        className
+      )}
+    >
+      {HISTORY_LEGEND.map((item) => (
+        <li key={item.label} className="flex items-center gap-1.5">
+          <span className={cn("h-2.5 w-1.5 rounded-[1.5px]", item.className)} />
+          {item.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// 列表视图共用一条时间说明，避免每行重复
+function ListHistoryCaption({ models }: { models: DashboardChannelModel[] }) {
+  const history = models.flatMap((model) => model.history.slice(0, HISTORY_SEGMENT_COUNT));
+  if (history.length === 0) {
+    return null;
+  }
+  const spanMs = getHistorySpanMs(history);
+  return (
+    <p className="px-3 pb-2 pt-1 text-right text-[10px] tabular-nums text-muted-foreground">
+      {`色带为每个模型最近 ${HISTORY_SEGMENT_COUNT} 次检查，左旧右新${spanMs > 0 ? `，覆盖${formatDuration(spanMs)}` : ""}`}
+    </p>
+  );
+}
+
 export function ModelCollection({
   models,
   period,
@@ -340,10 +445,13 @@ export function ModelCollection({
 }) {
   if (view === "list") {
     return (
-      <div className="divide-y divide-border/50">
-        {models.map((model) => (
-          <ModelListRow key={model.id} model={model} period={period} />
-        ))}
+      <div>
+        <div className="divide-y divide-border/50">
+          {models.map((model) => (
+            <ModelListRow key={model.id} model={model} period={period} />
+          ))}
+        </div>
+        <ListHistoryCaption models={models} />
       </div>
     );
   }

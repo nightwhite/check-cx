@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 
+import { toCompactDashboardPayload } from "../pages/index-html";
 import { parseTrendPeriod, VALID_TREND_PERIODS } from "./trend-period";
 
 interface SnapshotRow {
@@ -74,20 +75,27 @@ export const dashboardRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) 
     });
   }
 
-  if (c.req.header("If-None-Match") === row.etag) {
+  // compact=1 去掉首页用不到的 providerTimelines；完整格式保留给外部调用方
+  const compact = c.req.query("compact") === "1";
+  const etag = compact ? `"${row.etag.replace(/"/g, "")}-c"` : row.etag;
+  if (c.req.header("If-None-Match") === etag) {
     return new Response(null, {
       status: 304,
-      headers: { ETag: row.etag },
+      headers: { ETag: etag },
     });
   }
 
-  return new Response(row.payload_json, {
+  const body = compact
+    ? JSON.stringify(toCompactDashboardPayload(JSON.parse(row.payload_json)))
+    : row.payload_json;
+  // 快照每分钟更新一次，边缘只短暂缓存，避免「下次检查」到点后仍拿到旧数据
+  return new Response(body, {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "public, no-cache",
-      "CDN-Cache-Control": "max-age=60",
-      "Cloudflare-CDN-Cache-Control": "max-age=60, stale-while-revalidate=300",
-      ETag: row.etag,
+      "CDN-Cache-Control": "max-age=5",
+      "Cloudflare-CDN-Cache-Control": "max-age=5",
+      ETag: etag,
       Vary: "Accept-Encoding",
     },
   });

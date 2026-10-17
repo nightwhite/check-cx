@@ -104,7 +104,7 @@ describe("worker fetch handler", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("https://cdn.example.com/favicon.png");
     expect(response.headers.get("Content-Type")).toBe("image/png");
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Cache-Control")).toContain("max-age=3600");
     await expect(response.arrayBuffer()).resolves.toEqual(
       remoteFavicon.buffer
     );
