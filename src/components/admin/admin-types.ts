@@ -1,6 +1,9 @@
 export interface AdminSessionResponse {
   authenticated?: boolean;
   error?: string;
+  turnstileSiteKey?: string | null;
+  remainingAttempts?: number;
+  retryAfterSeconds?: number;
 }
 
 export interface AdminSummary {

@@ -260,3 +260,12 @@ export const jobRuns = sqliteTable(
   },
   (table) => [index("idx_job_runs_started_at").on(table.startedAtMs)]
 );
+
+export const adminLoginAttempts = sqliteTable("admin_login_attempts", {
+  key: text("key").primaryKey(),
+  failures: integer("failures").notNull().default(0),
+  windowStartedAtMs: integer("window_started_at_ms").notNull(),
+  lockedUntilMs: integer("locked_until_ms"),
+  lockCount: integer("lock_count").notNull().default(0),
+  updatedAtMs: integer("updated_at_ms").notNull(),
+});

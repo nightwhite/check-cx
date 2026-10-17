@@ -55,19 +55,43 @@ export async function getAdminSession(): Promise<AdminSessionResponse> {
   return parseJson<AdminSessionResponse>(response);
 }
 
-export async function loginAdmin(token: string): Promise<AdminSessionResponse> {
+export async function loginAdmin(
+  token: string,
+  turnstileToken?: string | null
+): Promise<AdminSessionResponse> {
   const response = await fetch("/api/admin/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify(
+      turnstileToken ? { token, turnstileToken } : { token }
+    ),
   });
   if (response.status === 503) {
     return { error: "admin_unavailable" };
   }
-  if (response.status === 401) {
-    return { error: "unauthorized" };
+  if (response.ok) {
+    return parseJson<AdminSessionResponse>(response);
   }
-  return parseJson<AdminSessionResponse>(response);
+
+  const body = await parseJson<AdminSessionResponse>(response).catch(
+    () => ({}) as AdminSessionResponse
+  );
+  if (response.status === 429) {
+    const retryAfterHeader = Number(response.headers.get("Retry-After"));
+    return {
+      error: "too_many_attempts",
+      retryAfterSeconds:
+        body.retryAfterSeconds ??
+        (Number.isFinite(retryAfterHeader) ? retryAfterHeader : 60),
+    };
+  }
+  if (response.status === 401) {
+    return {
+      error: "unauthorized",
+      remainingAttempts: body.remainingAttempts,
+    };
+  }
+  return { error: body.error ?? "request_failed" };
 }
 
 export async function getAdminSummary(): Promise<AdminSummary | null> {

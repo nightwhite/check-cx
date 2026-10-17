@@ -8,6 +8,8 @@ declare global {
     CONFIG_ENCRYPTION_KEY?: string;
     INTERNAL_METRICS_TOKEN?: string;
     PUBLIC_ORIGIN?: string;
+    TURNSTILE_SITE_KEY?: string;
+    TURNSTILE_SECRET_KEY?: string;
   }
 }
 
