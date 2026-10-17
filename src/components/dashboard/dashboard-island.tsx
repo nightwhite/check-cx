@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
-  AlertTriangle,
   Check,
   ChevronDown,
   ExternalLink,
+  LayoutGrid,
+  List,
   RefreshCcw,
   Search,
 } from "lucide-react";
@@ -17,105 +18,25 @@ import type {
   DashboardChannelModel,
   DashboardData,
   HealthStatus,
-  TimelineItem,
 } from "@/lib/types";
-import { ProviderIcon } from "@/components/provider-icon";
 import { cn } from "@/lib/utils";
 
+import {
+  FAILURE_STATUSES,
+  PERIODS,
+  STATUS_DOT_CLASS,
+  STATUS_LABEL,
+  STATUS_PILL_CLASS,
+  formatTime,
+  getEffectiveStatus,
+  getProviderFamily,
+} from "./dashboard-shared";
+import { ModelCollection, type ModelViewMode } from "./model-cards";
 import { ThemeToggle } from "./theme-toggle";
 
-const PERIODS: Array<{ value: AvailabilityPeriod; label: string }> = [
-  { value: "7d", label: "7 天" },
-  { value: "15d", label: "15 天" },
-  { value: "30d", label: "30 天" },
-];
-const HISTORY_SEGMENT_COUNT = 60;
-const DEGRADED_THRESHOLD_MS = 30_000;
 const ALL_CHANNELS = "all";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "check-cx:collapsed-channels";
-const FAILURE_STATUSES = new Set<string>(["failed", "error", "validation_failed"]);
-
-const STATUS_LABEL: Record<string, string> = {
-  operational: "正常",
-  degraded: "延迟",
-  failed: "异常",
-  validation_failed: "验证失败",
-  maintenance: "维护中",
-  error: "错误",
-};
-
-const STATUS_DOT_CLASS: Record<string, string> = {
-  operational: "bg-emerald-500",
-  degraded: "bg-amber-500",
-  failed: "bg-rose-500",
-  validation_failed: "bg-orange-500",
-  maintenance: "bg-sky-500",
-  error: "bg-red-600",
-};
-
-const STATUS_PILL_CLASS: Record<string, string> = {
-  operational: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  degraded: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  failed: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-  validation_failed: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300",
-  maintenance: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  error: "border-red-600/30 bg-red-600/10 text-red-700 dark:text-red-300",
-};
-
-const PROVIDER_LABEL: Record<string, string> = {
-  openai: "OpenAI",
-  gemini: "Gemini",
-  anthropic: "Claude",
-};
-
-function getProviderFamily(type: string) {
-  return PROVIDER_LABEL[type] ?? type;
-}
-
-function getProviderDisplayName(name: string) {
-  return name.replace(/^SU8\s+/i, "");
-}
-
-const latencyNumberFormatter = new Intl.NumberFormat("en-US");
-
-function formatLatency(value: number | null | undefined) {
-  return typeof value === "number"
-    ? `${latencyNumberFormatter.format(Math.round(value))} ms`
-    : "—";
-}
-
-const chinaTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: "Asia/Shanghai",
-  year: "numeric",
-  month: "numeric",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-});
-
-const chinaClockFormatter = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: "Asia/Shanghai",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-});
-
-function formatTime(value: string | null | undefined) {
-  if (!value) {
-    return "暂无数据";
-  }
-  return chinaTimeFormatter.format(new Date(value));
-}
-
-function formatClock(value: string | null | undefined) {
-  if (!value) {
-    return "—";
-  }
-  return chinaClockFormatter.format(new Date(value));
-}
+const VIEW_MODE_STORAGE_KEY = "check-cx:view-mode";
 
 function formatCountdown(ms: number | null) {
   if (typeof ms !== "number") {
@@ -247,6 +168,31 @@ function writeCollapsedChannels(ids: Set<string>) {
   }
 }
 
+function readViewMode(): ModelViewMode {
+  if (typeof window === "undefined") {
+    return "grid";
+  }
+  const fromQuery = new URLSearchParams(window.location.search).get("view");
+  if (fromQuery === "grid" || fromQuery === "list") {
+    return fromQuery;
+  }
+  try {
+    return window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "list"
+      ? "list"
+      : "grid";
+  } catch {
+    return "grid";
+  }
+}
+
+function writeViewMode(mode: ModelViewMode) {
+  try {
+    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+  } catch {
+    // 存储不可用时视图偏好仅在本次会话生效
+  }
+}
+
 function isScreenshotMode() {
   if (typeof window === "undefined") {
     return false;
@@ -283,22 +229,6 @@ function getOverallChannelStatus(channels: DashboardChannel[]): HealthStatus | "
   return "operational";
 }
 
-function isSlowLatency(model: DashboardChannelModel) {
-  return (
-    typeof model.latencyMs === "number" && model.latencyMs > DEGRADED_THRESHOLD_MS
-  );
-}
-
-// 正常/延迟以最新延迟为准，与状态胶囊配色保持一致
-function getEffectiveStatus(model: DashboardChannelModel): HealthStatus {
-  if (
-    (model.status === "operational" || model.status === "degraded") &&
-    typeof model.latencyMs === "number"
-  ) {
-    return isSlowLatency(model) ? "degraded" : "operational";
-  }
-  return model.status;
-}
 
 function summarizeChannel(channel: DashboardChannel) {
   const summary = { total: channel.models.length, operational: 0, degraded: 0, failed: 0 };
@@ -315,6 +245,29 @@ function summarizeChannel(channel: DashboardChannel) {
   return summary;
 }
 
+function statusRank(model: DashboardChannelModel) {
+  const status = getEffectiveStatus(model);
+  if (FAILURE_STATUSES.has(status)) {
+    return 0;
+  }
+  if (status === "degraded") {
+    return 1;
+  }
+  return status === "operational" ? 3 : 2;
+}
+
+function summarizeChannels(channels: DashboardChannel[]) {
+  const total = { total: 0, operational: 0, degraded: 0, failed: 0 };
+  for (const channel of channels) {
+    const summary = summarizeChannel(channel);
+    total.total += summary.total;
+    total.operational += summary.operational;
+    total.degraded += summary.degraded;
+    total.failed += summary.failed;
+  }
+  return total;
+}
+
 function formatChannelSummary(channel: DashboardChannel) {
   const summary = summarizeChannel(channel);
   const parts = [
@@ -328,56 +281,6 @@ function formatChannelSummary(channel: DashboardChannel) {
   return parts.join(" · ");
 }
 
-function getAvailabilityColor(pct: number | null | undefined) {
-  if (pct === null || pct === undefined) {
-    return "text-muted-foreground";
-  }
-  if (pct >= 99) {
-    return "text-emerald-600 dark:text-emerald-300";
-  }
-  if (pct >= 95) {
-    return "text-lime-600 dark:text-lime-300";
-  }
-  if (pct >= 90) {
-    return "text-amber-600 dark:text-amber-300";
-  }
-  return "text-rose-600 dark:text-rose-300";
-}
-
-function getModelStatusClasses(model: DashboardChannelModel) {
-  if (
-    (model.status === "operational" || model.status === "degraded") &&
-    typeof model.latencyMs === "number"
-  ) {
-    const isSlow = isSlowLatency(model);
-    return {
-      pill: isSlow
-        ? STATUS_PILL_CLASS.degraded
-        : STATUS_PILL_CLASS.operational,
-      dot: isSlow ? STATUS_DOT_CLASS.degraded : STATUS_DOT_CLASS.operational,
-    };
-  }
-
-  return {
-    pill: STATUS_PILL_CLASS[model.status] ?? "border-border bg-muted text-muted-foreground",
-    dot: STATUS_DOT_CLASS[model.status] ?? "bg-muted-foreground",
-  };
-}
-
-function CornerPlus({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1"
-      className={cn("pointer-events-none absolute h-4 w-4 text-muted-foreground/35", className)}
-    >
-      <line x1="12" y1="0" x2="12" y2="24" />
-      <line x1="0" y1="12" x2="24" y2="12" />
-    </svg>
-  );
-}
 
 function PeriodSwitch({
   period,
@@ -449,7 +352,7 @@ function ProviderFamilySwitch({
   }, [isOpen]);
 
   return (
-    <div ref={rootRef} className="relative min-w-0 flex-1 sm:min-w-[150px] sm:flex-none">
+    <div ref={rootRef} className="relative shrink-0 sm:min-w-[150px]">
       <button
         type="button"
         aria-expanded={isOpen}
@@ -465,7 +368,7 @@ function ProviderFamilySwitch({
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]" />
-          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground sm:inline">
             类型
           </span>
           <span className="truncate font-bold text-foreground">{activeLabel}</span>
@@ -524,168 +427,8 @@ function ProviderFamilySwitch({
   );
 }
 
-function StatusHistory({ items }: { items: TimelineItem[] }) {
-  const segments = Array.from(
-    { length: HISTORY_SEGMENT_COUNT },
-    (_, index) => items[index] ?? null
-  );
 
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <span>最近 {Math.min(items.length, HISTORY_SEGMENT_COUNT)} 次检查</span>
-        <span>最新</span>
-      </div>
-      <div className="flex h-9 flex-row-reverse gap-[2px] rounded-md bg-muted/25 p-[3px]">
-        {segments.map((segment, index) => (
-          <span
-            key={segment ? `${segment.id}-${segment.checkedAt}` : `empty-${index}`}
-            aria-label={
-              segment
-                ? `${formatTime(segment.checkedAt)} ${STATUS_LABEL[segment.status] ?? segment.status}`
-                : "暂无数据"
-            }
-            title={
-              segment
-                ? `${formatTime(segment.checkedAt)} · ${STATUS_LABEL[segment.status] ?? segment.status} · ${formatLatency(segment.latencyMs)}`
-                : "暂无数据"
-            }
-            className={cn(
-              "min-w-0 flex-1 rounded-[2px]",
-              segment
-                ? STATUS_DOT_CLASS[segment.status] ?? "bg-muted-foreground"
-                : "bg-muted/50"
-            )}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
 
-function historyToTimelineItems(
-  model: DashboardChannelModel
-): TimelineItem[] {
-  return model.history.map((item) => ({
-    id: model.id,
-    name: model.name,
-    type: model.type,
-    model: model.model,
-    status: item.status,
-    latencyMs: item.latencyMs,
-    pingLatencyMs: null,
-    checkedAt: item.checkedAt,
-    message: "",
-  }));
-}
-
-function getPeriodLabel(period: AvailabilityPeriod) {
-  return PERIODS.find((item) => item.value === period)?.label ?? period;
-}
-
-function ChannelModelRow({
-  model,
-  period,
-}: {
-  model: DashboardChannelModel;
-  period: AvailabilityPeriod;
-}) {
-  const statusClasses = getModelStatusClasses(model);
-  const availabilityPct = model.availability[period] ?? null;
-  const availabilityLabel =
-    availabilityPct === null ? "—" : `${availabilityPct.toFixed(2)}%`;
-  const officialStatusMessage = model.officialStatus?.message;
-  const shouldShowOfficialStatus =
-    model.status !== "operational" && Boolean(officialStatusMessage);
-  const hasLatency = typeof model.latencyMs === "number";
-
-  return (
-    <article className="group rounded-2xl border border-border/45 bg-background/65 p-4 shadow-sm transition hover:border-foreground/20 hover:shadow-lg hover:shadow-foreground/5">
-      {shouldShowOfficialStatus && (
-        <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>官方状态：{officialStatusMessage}</span>
-        </div>
-      )}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,1.6fr)] lg:items-center lg:gap-6">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              aria-label={`${PROVIDER_LABEL[model.type] ?? model.type} provider`}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-muted/55 shadow-sm ring-1 ring-border/65"
-            >
-              <ProviderIcon type={model.type} size={26} className="text-foreground/80" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="truncate text-xl font-extrabold leading-tight">
-                {getProviderDisplayName(model.name)}
-              </h2>
-              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span className="rounded-md bg-muted px-2 py-0.5 font-semibold text-foreground/70">
-                  {PROVIDER_LABEL[model.type] ?? model.type}
-                </span>
-                <span className="truncate font-medium">{model.model}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-col items-start gap-1.5 sm:items-end">
-            <span
-              className={cn(
-                "inline-flex w-fit items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold",
-                statusClasses.pill
-              )}
-            >
-              <span className={cn("h-2 w-2 rounded-full", statusClasses.dot)} />
-              {STATUS_LABEL[model.status] ?? model.status}
-            </span>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span
-                data-testid="model-latency"
-                className={cn(
-                  "font-mono font-bold tabular-nums",
-                  hasLatency
-                    ? isSlowLatency(model)
-                      ? "text-amber-600 dark:text-amber-300"
-                      : "text-foreground"
-                    : "text-muted-foreground"
-                )}
-              >
-                {formatLatency(model.latencyMs)}
-              </span>
-              <span aria-hidden="true">·</span>
-              <time
-                dateTime={model.checkedAt}
-                title={`最近检查 ${formatTime(model.checkedAt)}`}
-                className="tabular-nums"
-              >
-                {formatClock(model.checkedAt)}
-              </time>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="text-xs text-muted-foreground">
-              近 {getPeriodLabel(period)}可用性
-            </div>
-            <div className={cn("text-lg font-black", getAvailabilityColor(availabilityPct))}>
-              {availabilityLabel}
-            </div>
-          </div>
-          <StatusHistory items={historyToTimelineItems(model)} />
-        </div>
-      </div>
-
-      {model.message && model.message !== "OK" && (
-        <div className="mt-3 rounded-xl bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
-          {model.message}
-        </div>
-      )}
-    </article>
-  );
-}
 
 function ChannelLogo({ channel }: { channel: DashboardChannel }) {
   const [failed, setFailed] = useState(false);
@@ -695,7 +438,7 @@ function ChannelLogo({ channel }: { channel: DashboardChannel }) {
       // eslint-disable-next-line @next/next/no-img-element
       <img
         alt={`${channel.name} logo`}
-        className="h-8 w-auto max-w-[160px] shrink-0 object-contain"
+        className="h-6 w-auto max-w-[120px] shrink-0 object-contain"
         src={channel.logoUrl}
         onError={() => setFailed(true)}
       />
@@ -703,23 +446,55 @@ function ChannelLogo({ channel }: { channel: DashboardChannel }) {
   }
 
   return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
-      <Activity className="h-4 w-4" />
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground text-background">
+      <Activity className="h-3.5 w-3.5" />
     </div>
   );
 }
 
 const CHANNEL_LINK_CLASS =
-  "inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium text-muted-foreground transition hover:text-foreground";
+  "inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-foreground/[0.05] hover:text-foreground";
+
+// 渠道头部的健康比例条：正常 / 延迟 / 异常 按数量占比
+function HealthMeter({ channel }: { channel: DashboardChannel }) {
+  const summary = summarizeChannel(channel);
+  if (summary.total === 0) {
+    return null;
+  }
+  const other = summary.total - summary.operational - summary.degraded - summary.failed;
+  const parts = [
+    { key: "operational", count: summary.operational, className: "bg-emerald-500" },
+    { key: "degraded", count: summary.degraded, className: "bg-amber-500" },
+    { key: "failed", count: summary.failed, className: "bg-rose-500" },
+    { key: "other", count: other, className: "bg-sky-500" },
+  ].filter((part) => part.count > 0);
+
+  return (
+    <div
+      aria-hidden="true"
+      className="hidden h-1.5 w-24 gap-0.5 overflow-hidden rounded-full sm:flex"
+    >
+      {parts.map((part) => (
+        <span
+          key={part.key}
+          className={cn("h-full first:rounded-l-full last:rounded-r-full", part.className)}
+          style={{ flexGrow: part.count }}
+        />
+      ))}
+    </div>
+  );
+}
 
 function ChannelSection({
   channel,
   period,
+  view,
   collapsed,
   onToggleCollapsed,
 }: {
   channel: DashboardChannel;
   period: AvailabilityPeriod;
+  view: ModelViewMode;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }) {
@@ -728,26 +503,27 @@ function ChannelSection({
   return (
     <section
       id={`channel-${channel.id}`}
-      className="scroll-mt-6 rounded-3xl border border-border/55 bg-background/45 p-4 shadow-sm backdrop-blur-xl sm:p-5"
+      className="scroll-mt-24 overflow-hidden rounded-2xl border border-border/70 bg-background/80 shadow-[0_1px_2px_rgb(0_0_0/0.04)] backdrop-blur-xl dark:bg-white/[0.02]"
     >
       <div
         className={cn(
-          "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between",
-          !collapsed && "mb-5"
+          "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3",
+          !collapsed && "border-b border-border/60"
         )}
       >
         <div className="flex min-w-0 items-center gap-3">
           <ChannelLogo channel={channel} />
-          <div className="min-w-0">
-            <h2 className="truncate text-2xl font-black tracking-tight">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+            <h2 className="truncate text-base font-semibold tracking-[-0.01em]">
               {channel.name}
             </h2>
-            <div className="mt-1 text-xs text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
               {formatChannelSummary(channel)}
-            </div>
+            </span>
           </div>
+          <HealthMeter channel={channel} />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-0.5">
           {channel.websiteUrl && (
             <a
               className={CHANNEL_LINK_CLASS}
@@ -786,13 +562,112 @@ function ChannelSection({
         </div>
       </div>
       {!collapsed && (
-        <div id={bodyId} className="space-y-3">
-          {channel.models.map((model) => (
-            <ChannelModelRow key={model.id} model={model} period={period} />
-          ))}
+        <div id={bodyId}>
+          <ModelCollection models={channel.models} period={period} view={view} />
         </div>
       )}
     </section>
+  );
+}
+
+function ViewModeSwitch({
+  view,
+  setView,
+}: {
+  view: ModelViewMode;
+  setView: (view: ModelViewMode) => void;
+}) {
+  const options: Array<{ value: ModelViewMode; label: string; icon: typeof List }> = [
+    { value: "grid", label: "卡片视图", icon: LayoutGrid },
+    { value: "list", label: "列表视图", icon: List },
+  ];
+  return (
+    <div
+      role="group"
+      aria-label="视图"
+      className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full border border-border/70 bg-background/75 p-0.5"
+    >
+      {options.map((option) => {
+        const Icon = option.icon;
+        const active = option.value === view;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-label={option.label}
+            aria-pressed={active}
+            title={option.label}
+            onClick={() => setView(option.value)}
+            className={cn(
+              "inline-flex h-7 w-7 items-center justify-center rounded-full transition",
+              active
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// 顶部汇总：一眼看清全站健康，点击“异常”可只看有问题的模型
+function SummaryStrip({
+  channels,
+  issuesOnly,
+  onToggleIssuesOnly,
+}: {
+  channels: DashboardChannel[];
+  issuesOnly: boolean;
+  onToggleIssuesOnly: () => void;
+}) {
+  const summary = summarizeChannels(channels);
+  const issues = summary.degraded + summary.failed;
+  const items = [
+    { label: "模型", value: summary.total, dot: null },
+    { label: "正常", value: summary.operational, dot: "bg-emerald-500" },
+    { label: "延迟", value: summary.degraded, dot: "bg-amber-500" },
+    { label: "异常", value: summary.failed, dot: "bg-rose-500" },
+  ];
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+      <dl className="flex min-w-0 flex-1 divide-x divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background/80 backdrop-blur-xl dark:bg-white/[0.02]">
+        {items.map((item) => (
+          <div key={item.label} className="min-w-0 flex-1 px-3 py-2 sm:px-4">
+            <dt className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
+              {item.dot && <span className={cn("h-1.5 w-1.5 rounded-full", item.dot)} />}
+              {item.label}
+            </dt>
+            <dd className="mt-0.5 text-lg font-semibold tabular-nums leading-6 tracking-tight">
+              {item.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <button
+        type="button"
+        aria-pressed={issuesOnly}
+        disabled={issues === 0 && !issuesOnly}
+        onClick={onToggleIssuesOnly}
+        className={cn(
+          "inline-flex h-9 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 sm:h-auto",
+          issuesOnly
+            ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+            : "border-border/70 bg-background/80 text-muted-foreground hover:border-foreground/25 hover:text-foreground dark:bg-white/[0.02]"
+        )}
+      >
+        <span
+          className={cn(
+            "h-2 w-2 rounded-full",
+            issues > 0 ? "bg-rose-500" : "bg-emerald-500"
+          )}
+        />
+        {issuesOnly ? "显示全部" : issues > 0 ? `只看异常 ${issues}` : "全部正常"}
+      </button>
+    </div>
   );
 }
 
@@ -823,7 +698,7 @@ function ChannelChips({
   ];
 
   return (
-    <nav aria-label="渠道筛选" className="-mt-4 flex flex-wrap gap-1.5">
+    <nav aria-label="渠道筛选" className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
       {options.map((option) => {
         const isActive = option.id === activeChannel;
         return (
@@ -833,7 +708,7 @@ function ChannelChips({
             aria-pressed={isActive}
             onClick={() => onSelect(option.id)}
             className={cn(
-              "inline-flex h-8 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition",
+              "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition",
               isActive
                 ? "border-foreground bg-foreground text-background"
                 : "border-border/70 bg-background/75 text-muted-foreground hover:border-foreground/25 hover:text-foreground"
@@ -870,14 +745,16 @@ function ChannelChips({
 
 function LoadingState() {
   return (
-    <div className="space-y-4">
-      <div className="h-28 animate-pulse rounded-3xl border border-border/50 bg-muted/40" />
-      {Array.from({ length: 3 }).map((_, index) => (
-        <div
-          key={index}
-          className="h-36 animate-pulse rounded-2xl border border-border/50 bg-muted/30"
-        />
-      ))}
+    <div className="space-y-3">
+      <div className="h-16 animate-pulse rounded-xl border border-border/50 bg-muted/40" />
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-2.5">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div
+            key={index}
+            className="h-32 animate-pulse rounded-xl border border-border/50 bg-muted/30"
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -891,6 +768,8 @@ export function DashboardIsland() {
   const [collapsedChannels, setCollapsedChannels] = useState<Set<string>>(
     readCollapsedChannels
   );
+  const [view, setViewState] = useState<ModelViewMode>(readViewMode);
+  const [issuesOnly, setIssuesOnly] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(null);
@@ -1000,10 +879,19 @@ export function DashboardIsland() {
               activeProviderFamily.toLowerCase();
           })
           .filter((model) => matchesModel(model, channel.name, query))
-          .sort((left, right) => left.name.localeCompare(right.name)),
+          .filter(
+            (model) =>
+              !issuesOnly || getEffectiveStatus(model) !== "operational"
+          )
+          // 有问题的模型排在前面，便于第一眼看到
+          .sort(
+            (left, right) =>
+              statusRank(left) - statusRank(right) ||
+              left.name.localeCompare(right.name)
+          ),
       }))
       .filter((channel) => channel.models.length > 0);
-  }, [activeProviderFamily, data, query]);
+  }, [activeProviderFamily, data, issuesOnly, query]);
   // 指定的渠道不在当前结果中时（被筛掉或已下线）回退为全部渠道
   const effectiveChannel = filteredChannels.some(
     (channel) => channel.id === activeChannel
@@ -1014,6 +902,10 @@ export function DashboardIsland() {
     effectiveChannel === ALL_CHANNELS
       ? filteredChannels
       : filteredChannels.filter((channel) => channel.id === effectiveChannel);
+  const setView = useCallback((mode: ModelViewMode) => {
+    setViewState(mode);
+    writeViewMode(mode);
+  }, []);
   const selectChannel = useCallback((channelId: string) => {
     setActiveChannel(channelId);
     syncChannelToUrl(channelId);
@@ -1035,133 +927,142 @@ export function DashboardIsland() {
     overallStatus === "unknown" ? "暂无数据" : STATUS_LABEL[overallStatus] ?? overallStatus;
   const countdown = formatCountdown(timeToNextRefresh);
 
+  const allVisibleChannels = useMemo(
+    () => (data?.channels ?? []).filter((channel) => channel.models.length > 0),
+    [data]
+  );
+  const siteName = data?.site?.siteName ?? "Status";
+
   return (
     <section
-      className="relative mx-auto flex w-full max-w-7xl flex-col gap-7"
+      className="relative mx-auto flex w-full max-w-[2200px] flex-col gap-4"
       data-dashboard-ready={!isLoading && !errorMessage ? "true" : "false"}
     >
-      <CornerPlus className="fixed left-4 top-4 hidden h-6 w-6 text-border md:block" />
-      <CornerPlus className="fixed right-4 top-4 hidden h-6 w-6 text-border md:block" />
-      <CornerPlus className="fixed bottom-4 left-4 hidden h-6 w-6 text-border md:block" />
-      <CornerPlus className="fixed bottom-4 right-4 hidden h-6 w-6 text-border md:block" />
-
-      <header className="relative z-10">
-        <div className="rounded-2xl border border-border/65 bg-background/90 px-4 py-3 shadow-sm backdrop-blur-xl sm:px-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 flex-wrap items-center gap-3">
-              {data?.site?.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  alt={data.site.siteName}
-                  className="h-9 w-fit max-w-[180px] shrink-0 object-contain sm:h-12 sm:max-w-[210px] dark:rounded-lg dark:bg-white dark:px-2 dark:py-1"
-                  src={data.site.logoUrl}
-                />
-              ) : (
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-foreground text-background">
-                  <Activity className="h-5 w-5" />
-                </div>
-              )}
-              <div className="min-w-0 flex-1 basis-[180px] border-l border-border pl-3">
-                <h1 className="text-2xl font-black leading-none tracking-[-0.045em] text-foreground sm:text-3xl">
-                  Status
-                </h1>
-                {data?.site?.description && (
-                  <p className="mt-1 line-clamp-2 max-w-[52ch] text-xs text-muted-foreground sm:text-sm">
-                    {data.site.description}
-                  </p>
-                )}
-              </div>
+      <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-1">
+        <div className="flex min-w-0 items-center gap-3">
+          {data?.site?.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              alt={siteName}
+              className="h-8 w-fit max-w-[160px] shrink-0 object-contain sm:h-9 dark:rounded-md dark:bg-white dark:px-1.5 dark:py-0.5"
+              src={data.site.logoUrl}
+            />
+          ) : (
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground text-background">
+              <Activity className="h-4 w-4" />
             </div>
+          )}
+          <div className="min-w-0 border-l border-border pl-3">
+            <h1 className="text-lg font-semibold leading-6 tracking-[-0.02em] text-foreground">
+              Status
+            </h1>
+            {data?.site?.description && (
+              <p className="line-clamp-2 max-w-[60ch] text-xs text-muted-foreground">
+                {data.site.description}
+              </p>
+            )}
+          </div>
+        </div>
 
-            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:shrink-0">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold",
+              overallStatus === "unknown"
+                ? "border-border bg-muted text-muted-foreground"
+                : STATUS_PILL_CLASS[overallStatus]
+            )}
+          >
+            <span className="relative flex h-2 w-2">
+              {overallStatus === "operational" && (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60 motion-reduce:hidden" />
+              )}
               <span
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-black",
+                  "relative inline-flex h-2 w-2 rounded-full",
                   overallStatus === "unknown"
-                    ? "border-border bg-muted text-muted-foreground"
-                    : STATUS_PILL_CLASS[overallStatus]
+                    ? "bg-muted-foreground"
+                    : STATUS_DOT_CLASS[overallStatus]
                 )}
-              >
-                <span
-                  className={cn(
-                    "h-2.5 w-2.5 rounded-full",
-                    overallStatus === "unknown"
-                      ? "bg-muted-foreground"
-                      : STATUS_DOT_CLASS[overallStatus]
-                  )}
-                />
-                {overallLabel}
-              </span>
-              <span className="rounded-full border border-border/70 bg-background px-3 py-1.5 text-sm text-muted-foreground">
-                最近更新 <strong className="text-foreground">{formatTime(data?.lastUpdated)}</strong>
-              </span>
-              {countdown && (
-                <span className="rounded-full border border-border/70 bg-background px-3 py-1.5 text-sm text-muted-foreground">
-                  下次检查 <strong className="text-foreground">{countdown}</strong>
-                </span>
-              )}
-              <span className="rounded-full border border-border/70 bg-background px-3 py-1.5 text-sm text-muted-foreground">
-                模型 <strong className="text-foreground">{data?.total ?? 0}</strong>
-              </span>
-              {data?.site?.publicOrigin && (
-                <a
-                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 py-1.5 text-sm font-semibold text-foreground transition hover:border-foreground/25"
-                  href={data.site.publicOrigin}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  官网
-                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                </a>
-              )}
-              <ThemeToggle />
-            </div>
-          </div>
+              />
+            </span>
+            {overallLabel}
+          </span>
+          <span className="hidden sm:inline">
+            最近更新 <strong className="font-medium tabular-nums text-foreground">{formatTime(data?.lastUpdated)}</strong>
+          </span>
+          {countdown && (
+            <span>
+              下次检查 <strong className="font-medium tabular-nums text-foreground">{countdown}</strong>
+            </span>
+          )}
+          {data?.site?.publicOrigin && (
+            <a
+              className="inline-flex items-center gap-1 font-medium text-foreground transition hover:opacity-70"
+              href={data.site.publicOrigin}
+              rel="noreferrer"
+              target="_blank"
+            >
+              官网
+              <ExternalLink className="h-3 w-3 text-muted-foreground" />
+            </a>
+          )}
+          <ThemeToggle />
         </div>
       </header>
 
-      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/55 bg-background/45 p-2">
-        <label className="relative block w-full sm:w-auto sm:min-w-[220px] sm:flex-[1_1_280px]">
-          <span className="sr-only">搜索模型、类型或渠道</span>
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            id="provider-search"
-            name="provider-search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索模型、类型或渠道"
-            className="h-8 w-full rounded-full border border-border bg-background/75 pl-8 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-foreground/40"
-          />
-        </label>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-none">
-          <ProviderFamilySwitch
-            families={providerFamilies}
-            activeFamily={activeProviderFamily}
-            setProviderFamily={setProviderFamily}
-          />
-          <PeriodSwitch period={period} setPeriod={setPeriod} />
-          <button
-            type="button"
-            aria-label="刷新"
-            onClick={() => loadDashboard()}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center gap-2 rounded-full border border-border bg-background/75 text-sm font-semibold transition hover:border-foreground/40 sm:w-auto sm:px-3"
-          >
-            <RefreshCcw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
-            <span className="hidden sm:inline">刷新</span>
-          </button>
-        </div>
-      </div>
-
-      {filteredChannels.length > 1 && (
-        <ChannelChips
-          channels={filteredChannels}
-          activeChannel={effectiveChannel}
-          onSelect={selectChannel}
+      {data && allVisibleChannels.length > 0 && (
+        <SummaryStrip
+          channels={allVisibleChannels}
+          issuesOnly={issuesOnly}
+          onToggleIssuesOnly={() => setIssuesOnly((value) => !value)}
         />
       )}
 
+      <div className="sticky top-0 z-20 -mx-4 px-4 py-2 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10 [background:color-mix(in_oklab,var(--background)_82%,transparent)]">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <label className="relative block w-full sm:w-auto sm:min-w-[220px] sm:flex-[1_1_280px]">
+            <span className="sr-only">搜索模型、类型或渠道</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              id="provider-search"
+              name="provider-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索模型、类型或渠道"
+              className="h-8 w-full rounded-full border border-border bg-background/75 pl-8 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-foreground/40"
+            />
+          </label>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex-none">
+            <ProviderFamilySwitch
+              families={providerFamilies}
+              activeFamily={activeProviderFamily}
+              setProviderFamily={setProviderFamily}
+            />
+            <PeriodSwitch period={period} setPeriod={setPeriod} />
+            <ViewModeSwitch view={view} setView={setView} />
+            <button
+              type="button"
+              aria-label="刷新"
+              onClick={() => loadDashboard()}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center gap-2 rounded-full border border-border bg-background/75 text-sm font-medium transition hover:border-foreground/40 sm:w-auto sm:px-3"
+            >
+              <RefreshCcw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
+              <span className="hidden sm:inline">刷新</span>
+            </button>
+          </div>
+        </div>
+        {filteredChannels.length > 1 && (
+          <ChannelChips
+            channels={filteredChannels}
+            activeChannel={effectiveChannel}
+            onSelect={selectChannel}
+          />
+        )}
+      </div>
+
       {errorMessage && (
-        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-300">
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-300">
           {errorMessage}
         </div>
       )}
@@ -1169,18 +1070,21 @@ export function DashboardIsland() {
       {isLoading && !data ? (
         <LoadingState />
       ) : channels.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-border/70 bg-background/75 p-12 text-center text-sm text-muted-foreground">
+        <div className="rounded-2xl border border-dashed border-border/70 bg-background/75 p-12 text-center text-sm text-muted-foreground">
           {(data?.channels ?? []).length === 0
             ? "暂无监控模型"
-            : "当前筛选下没有匹配的模型"}
+            : issuesOnly
+              ? "当前没有异常的模型"
+              : "当前筛选下没有匹配的模型"}
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {channels.map((channel) => (
             <ChannelSection
               key={channel.id}
               channel={channel}
               period={period}
+              view={view}
               collapsed={collapsedChannels.has(channel.id)}
               onToggleCollapsed={() => toggleChannelCollapsed(channel.id)}
             />
