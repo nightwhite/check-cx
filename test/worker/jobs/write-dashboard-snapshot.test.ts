@@ -455,6 +455,28 @@ describe("writeDashboardSnapshot", () => {
     });
   });
 
+  it("does not expose upstream endpoints or raw logs in public snapshots", async () => {
+    const db = new FakeD1();
+    (db.historyRows[2] as { log_message: string | null }).log_message =
+      "raw upstream body";
+
+    await writeDashboardSnapshot(
+      db,
+      [
+        { ...createResult("core-1", "core"), logMessage: "raw upstream body" },
+        createResult("solo-1", null),
+      ],
+      Date.parse("2026-05-03T00:00:00.000Z")
+    );
+
+    expect(db.rows.size).toBeGreaterThan(0);
+    for (const row of db.rows.values()) {
+      expect(row.payload_json).not.toContain("api.openai.com");
+      expect(row.payload_json).not.toContain("\"endpoint\"");
+      expect(row.payload_json).not.toContain("raw upstream body");
+    }
+  });
+
   it("chunks history queries to stay under the D1 bind parameter limit", async () => {
     const db = new FakeD1();
     const results = Array.from({ length: 1_000 }, (_, index) =>

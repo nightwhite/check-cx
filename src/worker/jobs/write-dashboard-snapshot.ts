@@ -170,6 +170,14 @@ function withOfficialStatus(
   return { ...result, officialStatus };
 }
 
+// 快照对外公开，去掉上游端点与原始日志，避免泄露源站地址。
+function toPublicResult(result: WorkerCheckResult) {
+  const publicResult: Partial<WorkerCheckResult> = { ...result };
+  delete publicResult.endpoint;
+  delete publicResult.logMessage;
+  return publicResult as Omit<WorkerCheckResult, "endpoint" | "logMessage">;
+}
+
 function buildPayload(
   results: WorkerCheckResult[],
   period: string,
@@ -184,9 +192,9 @@ function buildPayload(
   const providerTimelines = results.map((result) => ({
     id: result.id,
     items: mergeTimelineItems(result, historyByConfig).map((item) =>
-      withOfficialStatus(item, officialStatusByType)
+      toPublicResult(withOfficialStatus(item, officialStatusByType))
     ),
-    latest: withOfficialStatus(result, officialStatusByType),
+    latest: toPublicResult(withOfficialStatus(result, officialStatusByType)),
   }));
   const lastUpdated =
     results.length > 0

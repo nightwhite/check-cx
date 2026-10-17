@@ -221,4 +221,20 @@ describe("status route", () => {
       },
     });
   });
+
+  it("does not expose upstream endpoints", async () => {
+    const app = createWorkerApp();
+    const db = new FakeD1([createRow()]);
+
+    const response = await app.request(
+      "http://example.com/api/v1/status",
+      {},
+      createEnv(db)
+    );
+
+    const body = await response.text();
+    expect(body).not.toContain("api.openai.com");
+    expect(JSON.parse(body).providers[0]).not.toHaveProperty("endpoint");
+    expect(db.lastQuery).not.toContain("c.endpoint");
+  });
 });
