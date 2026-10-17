@@ -8,6 +8,42 @@ import "../styles/global.css";
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script is:inline>
+      (function () {
+        var media = window.matchMedia
+          ? window.matchMedia("(prefers-color-scheme: dark)")
+          : null;
+        function readTheme() {
+          try {
+            var value = window.localStorage.getItem("theme");
+            return value === "light" || value === "dark" ? value : "system";
+          } catch (error) {
+            return "system";
+          }
+        }
+        function apply() {
+          var theme = readTheme();
+          var isDark =
+            theme === "dark" || (theme === "system" && !!media && media.matches);
+          var root = document.documentElement;
+          root.classList.toggle("dark", isDark);
+          root.style.colorScheme = isDark ? "dark" : "light";
+        }
+        apply();
+        if (media) {
+          var onChange = function () {
+            if (readTheme() === "system") {
+              apply();
+            }
+          };
+          if (media.addEventListener) {
+            media.addEventListener("change", onChange);
+          } else if (media.addListener) {
+            media.addListener(onChange);
+          }
+        }
+      })();
+    </script>
     <title>SU8 Status</title>
     <meta
       name="description"

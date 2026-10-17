@@ -465,7 +465,7 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
 
-    fireEvent.change(screen.getByLabelText("搜索模型、类型或端点"), {
+    fireEvent.change(screen.getByLabelText("搜索模型、类型或渠道"), {
       target: { value: "not-a-model" },
     });
 
@@ -487,7 +487,7 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByLabelText("搜索模型、类型或端点")).not.toBeNull();
+    expect(screen.getByLabelText("搜索模型、类型或渠道")).not.toBeNull();
     expect(screen.getByRole("button", { name: "模型类型筛选 OpenAI" })).not.toBeNull();
     expect(screen.queryByRole("group", { name: "模型类型筛选" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "模型类型筛选" })).toBeNull();
@@ -563,5 +563,193 @@ describe("DashboardIsland", () => {
     expect(screen.getByRole("button", { name: "模型类型筛选 Claude" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("heading", { name: "gpt-5.5" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
+  });
+  it("shows latest latency and check time on each model card", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(withFirstModelLatency(baseData, 1405)))
+    );
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("model-latency").textContent).toBe("1,405 ms");
+    expect(screen.getByText("08:00:00")).not.toBeNull();
+    expect(screen.getByText("近 30 天可用性")).not.toBeNull();
+  });
+
+  it("marks slow latency with the degraded color", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(withFirstModelLatency(baseData, 30_001)))
+    );
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("model-latency").className).toContain("text-amber-600");
+  });
+
+  it("summarizes failed models in the channel header", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(withFirstModelStatus(baseData, "failed")))
+    );
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("1 个模型 · 0 正常 · 1 异常")).not.toBeNull();
+  });
+
+  it("filters by channel chips and syncs the channel to the URL", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(withClaudeChannel(baseData)))
+    );
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const nav = screen.getByRole("navigation", { name: "渠道筛选" });
+    expect(nav).not.toBeNull();
+    expect(screen.getByRole("button", { name: "全部渠道" }).getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Claude Official/ }));
+    expect(window.location.search).toBe("?channel=channel-claude");
+    expect(screen.queryByRole("heading", { name: "OpenAI Official" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Claude Official" })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "全部渠道" }));
+    expect(window.location.search).toBe("");
+    expect(screen.getByRole("heading", { name: "OpenAI Official" })).not.toBeNull();
+  });
+
+  it("hides channel chips when only one channel is visible", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(baseData)));
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("navigation", { name: "渠道筛选" })).toBeNull();
+  });
+
+  it("restores the channel filter from the URL", async () => {
+    window.history.replaceState({}, "", "/?channel=channel-claude");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(withClaudeChannel(baseData)))
+    );
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("heading", { name: "OpenAI Official" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Claude Official" })).not.toBeNull();
+  });
+
+  it("matches channel names in search", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(withClaudeChannel(baseData)))
+    );
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    fireEvent.change(screen.getByLabelText("搜索模型、类型或渠道"), {
+      target: { value: "claude official" },
+    });
+    expect(screen.queryByRole("heading", { name: "OpenAI Official" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Claude Official" })).not.toBeNull();
+  });
+
+  it("collapses a channel and remembers it", async () => {
+    window.localStorage.clear();
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(baseData)));
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const toggle = screen.getByRole("button", { name: "折叠 OpenAI Official" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(toggle);
+
+    const expand = screen.getByRole("button", { name: "展开 OpenAI Official" });
+    expect(expand.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("heading", { name: "gpt-5.5" })).toBeNull();
+    expect(
+      JSON.parse(window.localStorage.getItem("check-cx:collapsed-channels") ?? "[]")
+    ).toEqual(["channel-openai"]);
+    window.localStorage.clear();
+  });
+
+  it("shows the channel logo and website link", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          ...baseData,
+          channels: [
+            { ...baseData.channels[0], logoUrl: "https://example.com/channel.png" },
+          ],
+        })
+      )
+    );
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const logo = screen.getByRole("img", { name: "OpenAI Official logo" });
+    expect(logo.getAttribute("src")).toBe("https://example.com/channel.png");
+    fireEvent.error(logo);
+    expect(screen.queryByRole("img", { name: "OpenAI Official logo" })).toBeNull();
+    expect(
+      screen
+        .getAllByRole("link", { name: "官网" })
+        .some((link) => link.getAttribute("href") === "https://openai.com/")
+    ).toBe(true);
+  });
+
+  it("cycles the theme between system, light and dark", async () => {
+    window.localStorage.clear();
+    document.documentElement.classList.remove("dark");
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(baseData)));
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /主题：跟随系统/ }));
+    expect(window.localStorage.getItem("theme")).toBe("light");
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: /主题：浅色/ }));
+    expect(window.localStorage.getItem("theme")).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: /主题：深色/ }));
+    expect(window.localStorage.getItem("theme")).toBe("system");
+    window.localStorage.clear();
+    document.documentElement.classList.remove("dark");
   });
 });

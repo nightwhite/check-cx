@@ -62,7 +62,11 @@ export interface DashboardChannel {
 /**
  * 时间线项目（保持原始 ISO 时间，交给客户端格式化）
  */
-export type TimelineItem = CheckResult;
+export type TimelineItem = Omit<CheckResult, "endpoint" | "logMessage"> & {
+  /** 公开快照不包含上游端点与原始日志，仅旧数据或服务端内部数据可能带有 */
+  endpoint?: string;
+  logMessage?: string;
+};
 
 /**
  * Provider 的时间线数据
