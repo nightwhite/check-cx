@@ -53,6 +53,9 @@ class FakeStatement implements JobLockStatementLike {
   }
 
   async all<T>() {
+    if (this.query.includes("JOIN check_latest l")) {
+      return { results: this.db.latestRows as T[] };
+    }
     return { results: [] as T[] };
   }
 
@@ -104,6 +107,10 @@ class FakeStatement implements JobLockStatementLike {
 
     if (this.query.includes("INSERT INTO dashboard_snapshots")) {
       this.db.dashboardSnapshotWrites++;
+      this.db.dashboardSnapshots.set(
+        `${String(this.values[0])}:${String(this.values[1])}`,
+        String(this.values[2])
+      );
       return { meta: { changes: 1 } };
     }
 
@@ -137,6 +144,8 @@ class FakeD1 implements JobLockExecutor {
   readonly batchSizes: number[] = [];
   readonly batchQueries: string[] = [];
   dashboardSnapshotWrites = 0;
+  readonly dashboardSnapshots = new Map<string, string>();
+  latestRows: Array<Record<string, unknown>> = [];
   notificationEvents = 0;
   notificationWebhookCiphertext: string | null = null;
   notificationWebhookNonce: string | null = null;
@@ -241,6 +250,96 @@ describe("runHealthCheckJob", () => {
     });
 
     expect(db.locks.get("health-check")?.locked_until_ms).toBe(3_000);
+  });
+
+  it("keeps configs that were not due this round in dashboard snapshots", async () => {
+    const db = new FakeD1();
+    db.latestRows = [
+      {
+        config_id: "config-old",
+        name: "Old model",
+        type: "openai",
+        endpoint: "https://api.openai.com/v1/chat/completions",
+        model: "gpt-4o-mini",
+        group_name: null,
+        channel_id: null,
+        channel_name: null,
+        channel_logo_url: null,
+        region: null,
+        status: "operational",
+        latency_ms: 120,
+        ping_latency_ms: 20,
+        checked_at_ms: Date.parse("2026-05-03T01:00:00.000Z"),
+        message: "ok",
+        log_message: null,
+      },
+      {
+        config_id: "config-new",
+        name: "New model",
+        type: "openai",
+        endpoint: "https://api.openai.com/v1/chat/completions",
+        model: "gpt-4.1",
+        group_name: null,
+        channel_id: null,
+        channel_name: null,
+        channel_logo_url: null,
+        region: null,
+        status: "failed",
+        latency_ms: null,
+        ping_latency_ms: null,
+        checked_at_ms: Date.parse("2026-05-03T00:59:00.000Z"),
+        message: "stale",
+        log_message: null,
+      },
+    ];
+    const env = {
+      DB: db,
+      ASSETS: { fetch: async () => new Response("asset") },
+      CONFIG_ENCRYPTION_KEY: "1234567890123456",
+    } as unknown as Env;
+
+    await runHealthCheckJob(env, Date.parse("2026-05-03T01:01:00.000Z"), {
+      ownerId: "owner-1",
+      loadConfigs: async () => [
+        {
+          id: "config-new",
+          name: "New model",
+          type: "openai",
+          endpoint: "https://api.openai.com/v1/chat/completions",
+          model: "gpt-4.1",
+          apiKey: "sk-test",
+          isMaintenance: false,
+        },
+      ],
+      runCheck: async () => ({
+        id: "config-new",
+        name: "New model",
+        type: "openai",
+        endpoint: "https://api.openai.com/v1/chat/completions",
+        model: "gpt-4.1",
+        status: "operational",
+        latencyMs: 300,
+        pingLatencyMs: 30,
+        checkedAt: "2026-05-03T01:01:00.000Z",
+        message: "ok",
+      }),
+      writeOfficialStatuses: async () => undefined,
+      now: () => Date.parse("2026-05-03T01:01:00.000Z"),
+    });
+
+    const payload = JSON.parse(db.dashboardSnapshots.get("dashboard:7d") ?? "{}");
+    expect(payload.total).toBe(2);
+    expect(
+      payload.providerTimelines.map(
+        (timeline: { id: string; latest: { status: string } }) => [
+          timeline.id,
+          timeline.latest.status,
+        ]
+      )
+    ).toEqual([
+      ["config-new", "operational"],
+      ["config-old", "operational"],
+    ]);
   });
 
   it("does not persist maintenance results into history or rollups", async () => {

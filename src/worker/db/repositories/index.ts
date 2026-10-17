@@ -1,4 +1,5 @@
 export { createDashboardSnapshotRepository } from "./dashboard-snapshots";
+export { loadLatestCheckResults } from "./latest-check-results";
 export { loadEnabledProviderConfigs } from "./provider-configs";
 export type {
   D1Executor,
