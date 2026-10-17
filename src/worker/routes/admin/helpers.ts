@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 
-import { isAdminRouteError } from "./validation";
+import { AdminUnavailableError, isAdminRouteError } from "./validation";
 
 export type AdminRouteContext = Context<{ Bindings: Env }>;
 
@@ -14,4 +14,12 @@ export function routeError(c: AdminRouteContext, error: unknown) {
 
 export function nowMs() {
   return Date.now();
+}
+
+export function getEncryptionKey(env: Env): string {
+  const value = env.CONFIG_ENCRYPTION_KEY;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new AdminUnavailableError("配置加密密钥未配置");
+  }
+  return value;
 }

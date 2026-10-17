@@ -1,28 +1,67 @@
 import { Hono } from "hono";
 
+import { encryptProviderKey } from "../../crypto/provider-key";
 import { createAdminChannelRepository } from "../../db/repositories/admin";
-import { nowMs, routeError } from "./helpers";
+import { getEncryptionKey, nowMs, routeError } from "./helpers";
 import {
   AdminConflictError,
   AdminNotFoundError,
   AdminValidationError,
   optionalBoolean,
   optionalHttpUrl,
+  optionalString,
   readJsonObject,
   requiredInteger,
   requiredString,
 } from "./validation";
 
-function channelPayload(body: Record<string, unknown>, now = nowMs()) {
+function optionalBaseUrl(body: Record<string, unknown>) {
+  const value = optionalHttpUrl(body, "baseUrl", "API Base URL");
+  return value ? value.replace(/\/+$/g, "") : null;
+}
+
+async function channelPayload(
+  env: Env,
+  body: Record<string, unknown>,
+  now = nowMs()
+) {
+  const apiKey = optionalString(body, "apiKey");
   return {
     name: requiredString(body, "name", "渠道名称"),
     logoUrl: optionalHttpUrl(body, "logoUrl", "Logo URL"),
     websiteUrl: optionalHttpUrl(body, "websiteUrl", "官网链接"),
     statusPageUrl: optionalHttpUrl(body, "statusPageUrl", "官方状态页链接"),
+    baseUrl: optionalBaseUrl(body),
+    encryptedKey: apiKey
+      ? await encryptProviderKey(apiKey, getEncryptionKey(env))
+      : null,
+    clearApiKey: optionalBoolean(body, "clearApiKey", false),
     sortOrder: requiredInteger(body, "sortOrder", "排序"),
     enabled: optionalBoolean(body, "enabled", true),
     nowMs: now,
   };
+}
+
+async function assertChannelCredentialsStillUsable(
+  repository: ReturnType<typeof createAdminChannelRepository>,
+  id: string,
+  input: Awaited<ReturnType<typeof channelPayload>>
+) {
+  if (
+    !input.baseUrl &&
+    (await repository.configsRequiringChannelBaseUrl(id)) > 0
+  ) {
+    throw new AdminConflictError(
+      "仍有监控项继承该渠道的 Base URL，无法清空"
+    );
+  }
+  if (
+    !input.encryptedKey &&
+    input.clearApiKey &&
+    (await repository.configsRequiringChannelKey(id)) > 0
+  ) {
+    throw new AdminConflictError("仍有监控项继承该渠道的 API Key，无法清除");
+  }
 }
 
 function isUniqueConstraintError(error: unknown) {
@@ -36,7 +75,7 @@ export const adminChannelRoutes = new Hono<{ Bindings: Env }>()
       const repository = createAdminChannelRepository(c.env.DB);
       const input = {
         id: crypto.randomUUID(),
-        ...channelPayload(await readJsonObject(c.req.raw)),
+        ...(await channelPayload(c.env, await readJsonObject(c.req.raw))),
       };
       await repository.create(input);
       const record = (await repository.list()).find((item) => item.id === input.id);
@@ -51,10 +90,16 @@ export const adminChannelRoutes = new Hono<{ Bindings: Env }>()
   .put("/:id", async (c) => {
     try {
       const repository = createAdminChannelRepository(c.env.DB);
-      const updated = await repository.update(
-        c.req.param("id"),
-        channelPayload(await readJsonObject(c.req.raw))
+      const input = await channelPayload(
+        c.env,
+        await readJsonObject(c.req.raw)
       );
+      await assertChannelCredentialsStillUsable(
+        repository,
+        c.req.param("id"),
+        input
+      );
+      const updated = await repository.update(c.req.param("id"), input);
       if (!updated) {
         throw new AdminNotFoundError("渠道不存在");
       }

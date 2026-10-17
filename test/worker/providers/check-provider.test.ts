@@ -198,6 +198,30 @@ describe("checkProvider", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("returns error without requesting when config credentials cannot be resolved", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({}));
+    const measurePing = vi.fn(async () => 20);
+
+    const result = await checkProvider(
+      { ...baseConfig, endpoint: "", apiKey: "", configError: "渠道未配置 Base URL" },
+      {
+        challenge,
+        fetcher,
+        measurePing,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result).toMatchObject({
+      status: "error",
+      message: "渠道未配置 Base URL",
+      latencyMs: null,
+      pingLatencyMs: null,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(measurePing).not.toHaveBeenCalled();
+  });
+
   it("lets custom request headers override provider auth headers", async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({ choices: [{ message: { content: "8" } }] })

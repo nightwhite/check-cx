@@ -54,6 +54,10 @@ export const channels = sqliteTable("channels", {
   logoUrl: text("logo_url"),
   websiteUrl: text("website_url"),
   statusPageUrl: text("status_page_url"),
+  baseUrl: text("base_url"),
+  apiKeyCiphertext: text("api_key_ciphertext"),
+  apiKeyNonce: text("api_key_nonce"),
+  apiKeyVersion: integer("api_key_version").notNull().default(1),
   sortOrder: integer("sort_order").notNull().default(0),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   createdAtMs: integer("created_at_ms").notNull().default(nowMs),
@@ -256,3 +260,12 @@ export const jobRuns = sqliteTable(
   },
   (table) => [index("idx_job_runs_started_at").on(table.startedAtMs)]
 );
+
+export const adminLoginAttempts = sqliteTable("admin_login_attempts", {
+  key: text("key").primaryKey(),
+  failures: integer("failures").notNull().default(0),
+  windowStartedAtMs: integer("window_started_at_ms").notNull(),
+  lockedUntilMs: integer("locked_until_ms"),
+  lockCount: integer("lock_count").notNull().default(0),
+  updatedAtMs: integer("updated_at_ms").notNull(),
+});

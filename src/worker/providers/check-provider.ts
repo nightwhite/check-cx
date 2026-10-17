@@ -1,3 +1,4 @@
+import { parseModelId } from "../../../lib/utils/endpoint-builder";
 import {
   generateChallenge,
   validateResponse,
@@ -97,23 +98,6 @@ function isGoogleGenerativeEndpoint(endpoint: string): boolean {
 
 function isOpenAICompatibleGemini(config: WorkerProviderConfig): boolean {
   return config.type === "gemini" && !isGoogleGenerativeEndpoint(config.endpoint);
-}
-
-function parseModelId(model: string) {
-  const trimmed = model.trim();
-  const directiveMatch = trimmed.match(
-    /^(.*?)[@#](mini|minimal|low|medium|high)$/i
-  );
-  if (directiveMatch) {
-    const [, modelId] = directiveMatch;
-    return {
-      modelId: modelId.trim() || trimmed,
-    };
-  }
-
-  return {
-    modelId: trimmed,
-  };
 }
 
 function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
@@ -352,6 +336,10 @@ export async function checkProvider(
 
   if (config.isMaintenance) {
     return buildBaseResult(config, "maintenance", checkedAtMs, "维护模式");
+  }
+
+  if (config.configError) {
+    return buildBaseResult(config, "error", checkedAtMs, config.configError);
   }
 
   const fetcher = options.fetcher ?? fetch;

@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { buildEndpointFromBaseUrl } from "../../../lib/utils/endpoint-builder";
 import { Button } from "../../../components/ui/button";
 import { Dialog } from "../../../components/ui/dialog";
 import { Select } from "../../../components/ui/select";
@@ -8,6 +9,7 @@ import type {
   AdminConfigRecord,
   AdminApiFormat,
   AdminChannelRecord,
+  AdminKeySource,
   AdminModelRecord,
   AdminProviderType,
 } from "./admin-types";
@@ -67,19 +69,29 @@ export function ConfigForm({
     setErrors({});
   }, [open, record]);
 
+  const selectedChannel = channels.find((channel) => channel.id === channelId);
+  const selectedModel = models.find((model) => model.id === modelId);
+  const previewEndpoint =
+    endpoint.trim() ||
+    (selectedChannel?.baseUrl && selectedModel
+      ? buildEndpointFromBaseUrl({
+          baseUrl: selectedChannel.baseUrl,
+          type,
+          apiFormat,
+          model: selectedModel.model,
+        })
+      : null);
+
   function handleSubmit() {
     const nextErrors: Record<string, string> = {};
-    if (!name.trim()) {
-      nextErrors.name = "配置名称必填";
-    }
     if (!modelId) {
       nextErrors.modelId = "模型必选";
     }
     if (!channelId) {
       nextErrors.channelId = "渠道必选";
     }
-    if (!endpoint.trim()) {
-      nextErrors.endpoint = "API 端点必填";
+    if (!endpoint.trim() && selectedChannel && !selectedChannel.baseUrl) {
+      nextErrors.endpoint = "所选渠道未配置 Base URL，请填写 API 端点";
     }
     const parsedInterval = checkIntervalSeconds
       ? Number(checkIntervalSeconds)
@@ -93,27 +105,37 @@ export function ConfigForm({
       nextErrors.checkIntervalSeconds =
         "检查频次覆盖必须在 15 到 3600 秒之间";
     }
-    if (!record && !apiKey.trim()) {
-      nextErrors.apiKey = "API Key 必填";
+    if (
+      !record &&
+      !apiKey.trim() &&
+      selectedChannel &&
+      !selectedChannel.hasApiKey &&
+      !isMaintenance
+    ) {
+      nextErrors.apiKey = "所选渠道未配置 API Key，请填写 API Key";
+    }
+    const resolvedName = name.trim() || selectedModel?.model || "";
+    if (!resolvedName) {
+      nextErrors.name = "配置名称必填";
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       return;
     }
     const payload: Record<string, unknown> = {
-      name,
+      name: resolvedName,
       type,
       modelId,
       channelId,
-      endpoint,
+      endpoint: endpoint.trim(),
       apiFormat,
       enabled,
       isMaintenance,
       checkIntervalSeconds: parsedInterval,
       region: region || null,
     };
-    if (!record) {
-      payload.apiKey = apiKey;
+    if (!record && apiKey.trim()) {
+      payload.apiKey = apiKey.trim();
     }
     onSubmit(payload);
   }
@@ -136,7 +158,24 @@ export function ConfigForm({
     >
       <div className="grid gap-4">
         <Field label="配置名称" error={errors.name}>
-          <TextInput value={name} onChange={(event) => setName(event.target.value)} />
+          <TextInput
+            value={name}
+            placeholder="留空使用模型名"
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
+        <Field label="渠道" error={errors.channelId}>
+          <Select
+            value={channelId}
+            onChange={(event) => setChannelId(event.target.value)}
+          >
+            <option value="">选择渠道</option>
+            {channels.map((channel) => (
+              <option key={channel.id} value={channel.id}>
+                {channel.name}
+              </option>
+            ))}
+          </Select>
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Provider 类型">
@@ -168,36 +207,34 @@ export function ConfigForm({
               <option value="responses">Responses</option>
             </Select>
           </Field>
-          <Field label="API 端点" error={errors.endpoint}>
+          <Field label="API 端点（可选，留空继承渠道）" error={errors.endpoint}>
             <TextInput
               value={endpoint}
+              placeholder={selectedChannel?.baseUrl ?? ""}
               onChange={(event) => setEndpoint(event.target.value)}
             />
           </Field>
         </div>
+        {channelId ? (
+          <p className="-mt-2 break-all text-xs text-muted-foreground">
+            {previewEndpoint
+              ? `将请求：${previewEndpoint}`
+              : "所选渠道未配置 Base URL，请填写 API 端点"}
+          </p>
+        ) : null}
         {!record ? (
-          <Field label="API Key" error={errors.apiKey}>
+          <Field label="API Key（可选，留空继承渠道）" error={errors.apiKey}>
             <TextInput
               type="password"
               value={apiKey}
               autoComplete="new-password"
+              placeholder={
+                selectedChannel?.hasApiKey ? "留空使用渠道 Key" : "渠道未配置 Key"
+              }
               onChange={(event) => setApiKey(event.target.value)}
             />
           </Field>
         ) : null}
-        <Field label="渠道" error={errors.channelId}>
-          <Select
-            value={channelId}
-            onChange={(event) => setChannelId(event.target.value)}
-          >
-            <option value="">选择渠道</option>
-            {channels.map((channel) => (
-              <option key={channel.id} value={channel.id}>
-                {channel.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="检查频次覆盖（秒）"
@@ -243,19 +280,25 @@ export function ConfigForm({
 interface ConfigSecretDialogProps {
   open: boolean;
   configName: string;
+  keySource?: AdminKeySource;
+  channelHasApiKey?: boolean;
   saving: boolean;
   serverError: string | null;
   onOpenChange(open: boolean): void;
   onSubmit(apiKey: string): void;
+  onInherit?(): void;
 }
 
 export function ConfigSecretDialog({
   open,
   configName,
+  keySource,
+  channelHasApiKey = false,
   saving,
   serverError,
   onOpenChange,
   onSubmit,
+  onInherit,
 }: ConfigSecretDialogProps) {
   const [apiKey, setApiKey] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
@@ -286,6 +329,17 @@ export function ConfigSecretDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             取消
           </Button>
+          {onInherit && keySource === "config" ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving || !channelHasApiKey}
+              title={channelHasApiKey ? undefined : "所属渠道未配置 API Key"}
+              onClick={onInherit}
+            >
+              改为继承渠道 Key
+            </Button>
+          ) : null}
           <Button type="button" disabled={saving} onClick={handleSubmit}>
             确认替换
           </Button>

@@ -1,6 +1,9 @@
 export interface AdminSessionResponse {
   authenticated?: boolean;
   error?: string;
+  turnstileSiteKey?: string | null;
+  remainingAttempts?: number;
+  retryAfterSeconds?: number;
 }
 
 export interface AdminSummary {
@@ -69,9 +72,14 @@ export interface AdminConfigRecord {
   checkIntervalSeconds: number | null;
   region: string | null;
   hasApiKey: boolean;
+  inheritsEndpoint: boolean;
+  keySource: AdminKeySource;
+  effectiveEndpoint: string | null;
   createdAtMs: number;
   updatedAtMs: number;
 }
+
+export type AdminKeySource = "config" | "channel" | "none";
 
 export interface AdminGroupRecord {
   id: string;
@@ -121,6 +129,8 @@ export interface AdminChannelRecord {
   logoUrl: string | null;
   websiteUrl: string | null;
   statusPageUrl: string | null;
+  baseUrl: string | null;
+  hasApiKey: boolean;
   sortOrder: number;
   enabled: boolean;
   createdAtMs: number;

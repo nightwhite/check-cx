@@ -161,6 +161,8 @@ describe("admin repositories", () => {
       logoUrl: null,
       websiteUrl: null,
       statusPageUrl: null,
+      baseUrl: null,
+      encryptedKey: null,
       sortOrder: 0,
       enabled: true,
       nowMs: 105,
@@ -232,6 +234,97 @@ describe("admin repositories", () => {
     await expect(configs.delete("config-1")).resolves.toBe(true);
     await expect(configs.list()).resolves.toEqual([]);
     await expect(configs.delete("missing-config")).resolves.toBe(false);
+  });
+
+  it("resolves inherited channel endpoint and key without exposing secrets", async () => {
+    const db = await createD1();
+    const encryptionKey = "0123456789abcdef0123456789abcdef";
+    await createAdminModelRepository(db).create({
+      id: "model-1",
+      type: "openai",
+      model: "gpt-5@low",
+      templateId: null,
+      nowMs: 100,
+    });
+    const channels = createAdminChannelRepository(db);
+    await channels.create({
+      id: "channel-1",
+      name: "Relay",
+      logoUrl: null,
+      websiteUrl: null,
+      statusPageUrl: null,
+      baseUrl: "https://relay.example.com",
+      encryptedKey: await encryptProviderKey("sk-channel", encryptionKey),
+      sortOrder: 0,
+      enabled: true,
+      nowMs: 105,
+    });
+    const configs = createAdminConfigRepository(db);
+    await configs.create({
+      id: "config-1",
+      name: "Inherited",
+      type: "openai",
+      modelId: "model-1",
+      channelId: "channel-1",
+      endpoint: "",
+      apiFormat: "responses",
+      encryptedKey: null,
+      enabled: true,
+      isMaintenance: false,
+      groupName: null,
+      checkIntervalSeconds: null,
+      region: null,
+      nowMs: 110,
+    });
+
+    const [channel] = await channels.list();
+    expect(channel).toMatchObject({
+      baseUrl: "https://relay.example.com",
+      hasApiKey: true,
+    });
+    expect(channel).not.toHaveProperty("apiKeyCiphertext");
+    await expect(channels.configsRequiringChannelKey("channel-1")).resolves.toBe(1);
+    await expect(
+      channels.configsRequiringChannelBaseUrl("channel-1")
+    ).resolves.toBe(1);
+
+    await expect(configs.list()).resolves.toEqual([
+      expect.objectContaining({
+        hasApiKey: false,
+        inheritsEndpoint: true,
+        keySource: "channel",
+        effectiveEndpoint: "https://relay.example.com/v1/responses",
+      }),
+    ]);
+
+    await configs.replaceSecret(
+      "config-1",
+      await encryptProviderKey("sk-own", encryptionKey),
+      200
+    );
+    await expect(configs.list()).resolves.toEqual([
+      expect.objectContaining({ keySource: "config" }),
+    ]);
+    await expect(configs.clearSecret("config-1", 300)).resolves.toBe(true);
+
+    await channels.update("channel-1", {
+      name: "Relay",
+      logoUrl: null,
+      websiteUrl: null,
+      statusPageUrl: null,
+      baseUrl: "https://relay.example.com/v1",
+      encryptedKey: null,
+      clearApiKey: true,
+      sortOrder: 0,
+      enabled: true,
+      nowMs: 400,
+    });
+    await expect(configs.list()).resolves.toEqual([
+      expect.objectContaining({
+        keySource: "none",
+        effectiveEndpoint: "https://relay.example.com/v1/responses",
+      }),
+    ]);
   });
 
   it("creates, lists, updates, and deletes groups", async () => {

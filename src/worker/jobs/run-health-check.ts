@@ -9,6 +9,7 @@ import {
   loadEnabledProviderConfigs,
   loadLatestCheckResults,
 } from "../db/repositories";
+import { pruneLoginAttempts } from "../routes/admin/login-guard";
 import { createJobLockRepository } from "./job-lock";
 import { processNotificationEvents } from "./notification-events";
 import { persistCheckResults } from "./persist-check-results";
@@ -238,6 +239,7 @@ export async function runHealthCheckJob(
     }
     if (shouldPruneCheckHistory(scheduledTime)) {
       await pruneCheckHistory(env.DB, snapshotAtMs);
+      await pruneLoginAttempts(env.DB, snapshotAtMs);
     }
     const finishedAtMs = now();
 

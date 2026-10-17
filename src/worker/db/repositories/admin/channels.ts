@@ -1,6 +1,7 @@
 import {
   bool,
   changed,
+  type AdminChannelCredentials,
   type AdminChannelRecord,
   type AdminD1Executor,
   type CreateAdminChannelInput,
@@ -13,6 +14,8 @@ interface ChannelRow {
   logo_url: string | null;
   website_url: string | null;
   status_page_url: string | null;
+  base_url: string | null;
+  has_api_key: number;
   sort_order: number;
   enabled: number;
   created_at_ms: number;
@@ -23,6 +26,15 @@ interface CountRow {
   count: number;
 }
 
+interface ChannelCredentialsRow {
+  id: string;
+  base_url: string | null;
+  has_api_key: number;
+}
+
+const HAS_API_KEY_SQL = `CASE WHEN api_key_ciphertext IS NOT NULL AND api_key_nonce IS NOT NULL
+                    THEN 1 ELSE 0 END AS has_api_key`;
+
 function toRecord(row: ChannelRow): AdminChannelRecord {
   return {
     id: row.id,
@@ -30,6 +42,8 @@ function toRecord(row: ChannelRow): AdminChannelRecord {
     logoUrl: row.logo_url,
     websiteUrl: row.website_url,
     statusPageUrl: row.status_page_url,
+    baseUrl: row.base_url,
+    hasApiKey: bool(row.has_api_key),
     sortOrder: row.sort_order,
     enabled: bool(row.enabled),
     createdAtMs: row.created_at_ms,
@@ -43,9 +57,10 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
       await db
         .prepare(
           `INSERT INTO channels
-             (id, name, logo_url, website_url, status_page_url, sort_order,
+             (id, name, logo_url, website_url, status_page_url, base_url,
+              api_key_ciphertext, api_key_nonce, api_key_version, sort_order,
               enabled, created_at_ms, updated_at_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           input.id,
@@ -53,6 +68,10 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
           input.logoUrl,
           input.websiteUrl,
           input.statusPageUrl,
+          input.baseUrl,
+          input.encryptedKey?.ciphertext ?? null,
+          input.encryptedKey?.nonce ?? null,
+          input.encryptedKey?.version ?? 1,
           input.sortOrder,
           input.enabled,
           input.nowMs,
@@ -64,8 +83,9 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
     async list() {
       const rows = await db
         .prepare(
-          `SELECT id, name, logo_url, website_url, status_page_url, sort_order,
-                  enabled, created_at_ms, updated_at_ms
+          `SELECT id, name, logo_url, website_url, status_page_url, base_url,
+                  ${HAS_API_KEY_SQL},
+                  sort_order, enabled, created_at_ms, updated_at_ms
            FROM channels
            ORDER BY sort_order ASC, name ASC`
         )
@@ -82,6 +102,7 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
                logo_url = ?,
                website_url = ?,
                status_page_url = ?,
+               base_url = ?,
                sort_order = ?,
                enabled = ?,
                updated_at_ms = ?
@@ -92,13 +113,86 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
           input.logoUrl,
           input.websiteUrl,
           input.statusPageUrl,
+          input.baseUrl,
           input.sortOrder,
           input.enabled,
           input.nowMs,
           id
         )
         .run();
-      return changed(result);
+      if (!changed(result)) {
+        return false;
+      }
+
+      if (input.encryptedKey) {
+        await db
+          .prepare(
+            `UPDATE channels
+             SET api_key_ciphertext = ?, api_key_nonce = ?, api_key_version = ?
+             WHERE id = ?`
+          )
+          .bind(
+            input.encryptedKey.ciphertext,
+            input.encryptedKey.nonce,
+            input.encryptedKey.version,
+            id
+          )
+          .run();
+      } else if (input.clearApiKey) {
+        await db
+          .prepare(
+            `UPDATE channels
+             SET api_key_ciphertext = NULL, api_key_nonce = NULL
+             WHERE id = ?`
+          )
+          .bind(id)
+          .run();
+      }
+      return true;
+    },
+
+    async findCredentials(id: string): Promise<AdminChannelCredentials | null> {
+      const row = await db
+        .prepare(
+          `SELECT id, base_url, ${HAS_API_KEY_SQL}
+           FROM channels
+           WHERE id = ?`
+        )
+        .bind(id)
+        .first<ChannelCredentialsRow>();
+      return row
+        ? { id: row.id, baseUrl: row.base_url, hasApiKey: bool(row.has_api_key) }
+        : null;
+    },
+
+    async configsRequiringChannelKey(id: string) {
+      const row = await db
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM check_configs
+           WHERE channel_id = ?
+             AND enabled = 1
+             AND is_maintenance = 0
+             AND (api_key_ciphertext IS NULL OR api_key_nonce IS NULL)`
+        )
+        .bind(id)
+        .first<CountRow>();
+      return row?.count ?? 0;
+    },
+
+    async configsRequiringChannelBaseUrl(id: string) {
+      const row = await db
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM check_configs
+           WHERE channel_id = ?
+             AND enabled = 1
+             AND is_maintenance = 0
+             AND TRIM(endpoint) = ''`
+        )
+        .bind(id)
+        .first<CountRow>();
+      return row?.count ?? 0;
     },
 
     async usedByConfigs(id: string) {

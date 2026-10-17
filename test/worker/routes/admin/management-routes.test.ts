@@ -251,6 +251,168 @@ describe("admin management routes", () => {
     expect(templateDelete.status).toBe(200);
   });
 
+  it("lets configs inherit channel base URL and API key", async () => {
+    const app = createWorkerApp();
+    const env = await createEnv();
+    const cookie = await loginCookie(app, env);
+
+    const modelResponse = await app.request(
+      "http://example.com/api/admin/models",
+      jsonRequest("POST", cookie, { type: "openai", model: "gpt-5", templateId: null }),
+      env
+    );
+    const model = (await modelResponse.json()) as { id: string };
+    const bareChannel = await createChannel(app, env, cookie, "Bare");
+
+    const missingBase = await app.request(
+      "http://example.com/api/admin/configs",
+      jsonRequest("POST", cookie, {
+        name: "Inherited",
+        type: "openai",
+        modelId: model.id,
+        channelId: bareChannel.id,
+        endpoint: "",
+        apiFormat: "responses",
+      }),
+      env
+    );
+    expect(missingBase.status).toBe(409);
+    await expect(missingBase.json()).resolves.toEqual({
+      error: "渠道未配置 Base URL，请填写 API 端点或先完善渠道",
+    });
+
+    const missingKey = await app.request(
+      "http://example.com/api/admin/configs",
+      jsonRequest("POST", cookie, {
+        name: "Inherited",
+        type: "openai",
+        modelId: model.id,
+        channelId: bareChannel.id,
+        endpoint: "https://direct.example.com/v1/responses",
+        apiFormat: "responses",
+      }),
+      env
+    );
+    expect(missingKey.status).toBe(409);
+
+    const channelResponse = await app.request(
+      "http://example.com/api/admin/channels",
+      jsonRequest("POST", cookie, {
+        name: "Relay",
+        baseUrl: "https://relay.example.com/",
+        apiKey: "sk-channel-secret",
+        sortOrder: 0,
+        enabled: true,
+      }),
+      env
+    );
+    expect(channelResponse.status).toBe(201);
+    const channel = (await channelResponse.json()) as Record<string, unknown>;
+    expect(channel).toMatchObject({
+      baseUrl: "https://relay.example.com",
+      hasApiKey: true,
+    });
+    expect(JSON.stringify(channel)).not.toContain("sk-channel-secret");
+    expect(JSON.stringify(channel)).not.toContain("Ciphertext");
+
+    const configResponse = await app.request(
+      "http://example.com/api/admin/configs",
+      jsonRequest("POST", cookie, {
+        name: "Inherited",
+        type: "openai",
+        modelId: model.id,
+        channelId: channel.id,
+        apiFormat: "responses",
+      }),
+      env
+    );
+    expect(configResponse.status).toBe(201);
+    await expect(configResponse.json()).resolves.toMatchObject({
+      endpoint: "",
+      hasApiKey: false,
+      inheritsEndpoint: true,
+      keySource: "channel",
+      effectiveEndpoint: "https://relay.example.com/v1/responses",
+    });
+
+    const clearChannelKey = await app.request(
+      `http://example.com/api/admin/channels/${String(channel.id)}`,
+      jsonRequest("PUT", cookie, {
+        name: "Relay",
+        baseUrl: "https://relay.example.com",
+        clearApiKey: true,
+        sortOrder: 0,
+        enabled: true,
+      }),
+      env
+    );
+    expect(clearChannelKey.status).toBe(409);
+
+    const clearChannelBase = await app.request(
+      `http://example.com/api/admin/channels/${String(channel.id)}`,
+      jsonRequest("PUT", cookie, {
+        name: "Relay",
+        baseUrl: null,
+        sortOrder: 0,
+        enabled: true,
+      }),
+      env
+    );
+    expect(clearChannelBase.status).toBe(409);
+
+    const keepKeyUpdate = await app.request(
+      `http://example.com/api/admin/channels/${String(channel.id)}`,
+      jsonRequest("PUT", cookie, {
+        name: "Relay renamed",
+        baseUrl: "https://relay.example.com/v1",
+        sortOrder: 0,
+        enabled: true,
+      }),
+      env
+    );
+    expect(keepKeyUpdate.status).toBe(200);
+    await expect(keepKeyUpdate.json()).resolves.toMatchObject({
+      name: "Relay renamed",
+      hasApiKey: true,
+    });
+
+    const list = (await (
+      await app.request(
+        "http://example.com/api/admin/configs",
+        { headers: { Cookie: cookie } },
+        env
+      )
+    ).json()) as Array<{ id: string; keySource: string }>;
+    const configId = list[0].id;
+
+    const ownSecret = await app.request(
+      `http://example.com/api/admin/configs/${configId}/secret`,
+      jsonRequest("POST", cookie, { apiKey: "sk-own" }),
+      env
+    );
+    expect(ownSecret.status).toBe(200);
+
+    const inheritSecret = await app.request(
+      `http://example.com/api/admin/configs/${configId}/secret`,
+      { method: "DELETE", headers: { Cookie: cookie } },
+      env
+    );
+    expect(inheritSecret.status).toBe(200);
+    await expect(inheritSecret.json()).resolves.toEqual({
+      ok: true,
+      hasApiKey: false,
+    });
+
+    const afterList = (await (
+      await app.request(
+        "http://example.com/api/admin/configs",
+        { headers: { Cookie: cookie } },
+        env
+      )
+    ).json()) as Array<{ keySource: string }>;
+    expect(afterList[0].keySource).toBe("channel");
+  });
+
   it("manages groups and notifications one row at a time", async () => {
     const app = createWorkerApp();
     const env = await createEnv();

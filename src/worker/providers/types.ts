@@ -28,6 +28,8 @@ export interface WorkerProviderConfig {
   effectiveCheckIntervalSeconds?: number;
   lastCheckedAtMs?: number | null;
   region?: string | null;
+  /** 端点或 Key 无法解析时的配置错误，检测时直接返回 error 状态。 */
+  configError?: string;
 }
 
 export interface WorkerCheckResult {

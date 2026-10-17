@@ -4,7 +4,6 @@ interface ProviderStatusRow {
   id: string;
   name: string;
   type: string;
-  endpoint: string;
   group_name: string | null;
   is_maintenance: number;
   model: string | null;
@@ -63,7 +62,6 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
        c.id,
        c.name,
        c.type,
-       c.endpoint,
        c.group_name,
        c.is_maintenance,
        m.model,
@@ -105,7 +103,6 @@ export const statusRoutes = new Hono<{ Bindings: Env }>().get("/", async (c) => 
         type: row.type,
         model: row.model,
         group: row.group_name,
-        endpoint: row.endpoint,
         latest,
         statistics: computeStatistics(timeline),
         timeline,
