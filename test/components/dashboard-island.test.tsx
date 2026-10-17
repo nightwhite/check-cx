@@ -789,7 +789,7 @@ describe("DashboardIsland", () => {
     window.history.replaceState({}, "", "/");
   });
 
-  it("summarizes all models and filters to issues only", async () => {
+  it("summarizes all models without an overall pill or issues-only toggle", async () => {
     window.history.replaceState({}, "", "/");
     vi.stubGlobal(
       "fetch",
@@ -801,13 +801,9 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
 
-    const toggle = screen.getByRole("button", { name: "只看异常 1" });
-    fireEvent.click(toggle);
-    expect(screen.getByRole("button", { name: "显示全部" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("heading", { name: "gpt-5.5" })).not.toBeNull();
-    expect(screen.queryByRole("heading", { name: "Claude" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "显示全部" }));
+    const summary = screen.getByText("模型").closest("dl");
+    expect(summary?.textContent).toBe("模型2正常1延迟0异常1");
+    expect(screen.queryByRole("button", { name: /只看异常|显示全部|全部正常/ })).toBeNull();
     expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
   });
 

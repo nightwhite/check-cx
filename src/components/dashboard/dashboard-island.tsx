@@ -25,8 +25,6 @@ import {
   FAILURE_STATUSES,
   PERIODS,
   STATUS_DOT_CLASS,
-  STATUS_LABEL,
-  STATUS_PILL_CLASS,
   formatTime,
   getEffectiveStatus,
   getProviderFamily,
@@ -602,18 +600,9 @@ function ViewModeSwitch({
   );
 }
 
-// 顶部汇总：一眼看清全站健康，点击“异常”可只看有问题的模型
-function SummaryStrip({
-  channels,
-  issuesOnly,
-  onToggleIssuesOnly,
-}: {
-  channels: DashboardChannel[];
-  issuesOnly: boolean;
-  onToggleIssuesOnly: () => void;
-}) {
+// 顶部汇总：一眼看清全站健康
+function SummaryStrip({ channels }: { channels: DashboardChannel[] }) {
   const summary = summarizeChannels(channels);
-  const issues = summary.degraded + summary.failed;
   const items = [
     { label: "模型", value: summary.total, dot: null },
     { label: "正常", value: summary.operational, dot: "bg-emerald-500" },
@@ -622,8 +611,8 @@ function SummaryStrip({
   ];
 
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-      <dl className="flex min-w-0 flex-1 divide-x divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background/80 backdrop-blur-xl dark:bg-white/[0.02]">
+    <div>
+      <dl className="flex min-w-0 divide-x divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background/80 backdrop-blur-xl dark:bg-white/[0.02]">
         {items.map((item) => (
           <div key={item.label} className="min-w-0 flex-1 px-3 py-2 sm:px-4">
             <dt className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
@@ -636,26 +625,6 @@ function SummaryStrip({
           </div>
         ))}
       </dl>
-      <button
-        type="button"
-        aria-pressed={issuesOnly}
-        disabled={issues === 0 && !issuesOnly}
-        onClick={onToggleIssuesOnly}
-        className={cn(
-          "inline-flex h-9 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 sm:h-auto",
-          issuesOnly
-            ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
-            : "border-border/70 bg-background/80 text-muted-foreground hover:border-foreground/25 hover:text-foreground dark:bg-white/[0.02]"
-        )}
-      >
-        <span
-          className={cn(
-            "h-2 w-2 rounded-full",
-            issues > 0 ? "bg-rose-500" : "bg-emerald-500"
-          )}
-        />
-        {issuesOnly ? "显示全部" : issues > 0 ? `只看异常 ${issues}` : "全部正常"}
-      </button>
     </div>
   );
 }
@@ -758,7 +727,6 @@ export function DashboardIsland() {
     readCollapsedChannels
   );
   const [view, setViewState] = useState<ModelViewMode>(readViewMode);
-  const [issuesOnly, setIssuesOnly] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(null);
@@ -868,10 +836,6 @@ export function DashboardIsland() {
               activeProviderFamily.toLowerCase();
           })
           .filter((model) => matchesModel(model, channel.name, query))
-          .filter(
-            (model) =>
-              !issuesOnly || getEffectiveStatus(model) !== "operational"
-          )
           // 有问题的模型排在前面，便于第一眼看到
           .sort(
             (left, right) =>
@@ -880,7 +844,7 @@ export function DashboardIsland() {
           ),
       }))
       .filter((channel) => channel.models.length > 0);
-  }, [activeProviderFamily, data, issuesOnly, query]);
+  }, [activeProviderFamily, data, query]);
   // 指定的渠道不在当前结果中时（被筛掉或已下线）回退为全部渠道
   const effectiveChannel = filteredChannels.some(
     (channel) => channel.id === activeChannel
@@ -911,9 +875,6 @@ export function DashboardIsland() {
       return next;
     });
   }, []);
-  const overallStatus = getOverallChannelStatus(channels);
-  const overallLabel =
-    overallStatus === "unknown" ? "暂无数据" : STATUS_LABEL[overallStatus] ?? overallStatus;
   const countdown = formatCountdown(timeToNextRefresh);
 
   const allVisibleChannels = useMemo(
@@ -954,29 +915,6 @@ export function DashboardIsland() {
         </div>
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold",
-              overallStatus === "unknown"
-                ? "border-border bg-muted text-muted-foreground"
-                : STATUS_PILL_CLASS[overallStatus]
-            )}
-          >
-            <span className="relative flex h-2 w-2">
-              {overallStatus === "operational" && (
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60 motion-reduce:hidden" />
-              )}
-              <span
-                className={cn(
-                  "relative inline-flex h-2 w-2 rounded-full",
-                  overallStatus === "unknown"
-                    ? "bg-muted-foreground"
-                    : STATUS_DOT_CLASS[overallStatus]
-                )}
-              />
-            </span>
-            {overallLabel}
-          </span>
           <span className="hidden sm:inline">
             最近更新 <strong className="font-medium tabular-nums text-foreground">{formatTime(data?.lastUpdated)}</strong>
           </span>
@@ -1001,11 +939,7 @@ export function DashboardIsland() {
       </header>
 
       {data && allVisibleChannels.length > 0 && (
-        <SummaryStrip
-          channels={allVisibleChannels}
-          issuesOnly={issuesOnly}
-          onToggleIssuesOnly={() => setIssuesOnly((value) => !value)}
-        />
+        <SummaryStrip channels={allVisibleChannels} />
       )}
 
       <div className="sticky top-0 z-20 -mx-4 px-4 py-2 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10 [background:color-mix(in_oklab,var(--background)_82%,transparent)]">
@@ -1062,9 +996,7 @@ export function DashboardIsland() {
         <div className="rounded-2xl border border-dashed border-border/70 bg-background/75 p-12 text-center text-sm text-muted-foreground">
           {(data?.channels ?? []).length === 0
             ? "暂无监控模型"
-            : issuesOnly
-              ? "当前没有异常的模型"
-              : "当前筛选下没有匹配的模型"}
+            : "当前筛选下没有匹配的模型"}
         </div>
       ) : (
         <div className="space-y-4">
