@@ -54,9 +54,17 @@ export interface AdminConfigRecord {
   checkIntervalSeconds: number | null;
   region: string | null;
   hasApiKey: boolean;
+  /** 端点留空，继承渠道 Base URL 拼接。 */
+  inheritsEndpoint: boolean;
+  /** 实际使用的 Key 来源。 */
+  keySource: AdminKeySource;
+  /** 实际请求的完整端点；无法解析时为 null。 */
+  effectiveEndpoint: string | null;
   createdAtMs: number;
   updatedAtMs: number;
 }
+
+export type AdminKeySource = "config" | "channel" | "none";
 
 export interface AdminGroupRecord {
   id: string;
@@ -95,6 +103,8 @@ export interface AdminChannelRecord {
   logoUrl: string | null;
   websiteUrl: string | null;
   statusPageUrl: string | null;
+  baseUrl: string | null;
+  hasApiKey: boolean;
   sortOrder: number;
   enabled: boolean;
   createdAtMs: number;
@@ -147,7 +157,7 @@ export interface CreateAdminConfigInput {
   channelId: string;
   endpoint: string;
   apiFormat?: AdminApiFormat;
-  encryptedKey: EncryptedProviderKey;
+  encryptedKey: EncryptedProviderKey | null;
   enabled: boolean;
   isMaintenance: boolean;
   groupName: string | null;
@@ -207,12 +217,23 @@ export interface CreateAdminChannelInput {
   logoUrl: string | null;
   websiteUrl: string | null;
   statusPageUrl: string | null;
+  baseUrl: string | null;
+  /** 新 Key；null 表示不修改。 */
+  encryptedKey: EncryptedProviderKey | null;
+  /** 清空已保存的渠道 Key（encryptedKey 为 null 时生效）。 */
+  clearApiKey?: boolean;
   sortOrder: number;
   enabled: boolean;
   nowMs: number;
 }
 
 export type UpdateAdminChannelInput = Omit<CreateAdminChannelInput, "id">;
+
+export interface AdminChannelCredentials {
+  id: string;
+  baseUrl: string | null;
+  hasApiKey: boolean;
+}
 
 export interface UpdateAdminNotificationSettingsInput {
   larkWebhookCiphertext: string | null;

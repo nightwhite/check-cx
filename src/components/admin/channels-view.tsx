@@ -15,6 +15,17 @@ import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { errorMessage, includesText, useAdminResource } from "./use-admin-resource";
 import { AdminViewLayout } from "./view-layout";
 
+function formatHost(value: string | null) {
+  if (!value) {
+    return null;
+  }
+  try {
+    return new URL(value).host;
+  } catch {
+    return value;
+  }
+}
+
 export function ChannelsView() {
   const [search, setSearch] = React.useState("");
   const [editing, setEditing] = React.useState<AdminChannelRecord | null>(null);
@@ -28,7 +39,10 @@ export function ChannelsView() {
   });
 
   const filtered = records.filter((record) =>
-    includesText([record.name, record.websiteUrl, record.statusPageUrl], search)
+    includesText(
+      [record.name, record.websiteUrl, record.statusPageUrl, record.baseUrl],
+      search
+    )
   );
 
   async function save(payload: Record<string, unknown>) {
@@ -100,6 +114,20 @@ export function ChannelsView() {
           }}
           columns={[
             { key: "name", header: "渠道", cell: (record) => record.name },
+            {
+              key: "api",
+              header: "API",
+              cell: (record) => (
+                <div>
+                  <p className="max-w-[28ch] truncate">
+                    {formatHost(record.baseUrl) ?? "未配置 Base URL"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {record.hasApiKey ? "Key 已配置" : "Key 未配置"}
+                  </p>
+                </div>
+              ),
+            },
             {
               key: "website",
               header: "官网",

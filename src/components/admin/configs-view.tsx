@@ -5,6 +5,7 @@ import { Button } from "../../../components/ui/button";
 import {
   createAdminConfig,
   deleteAdminConfig,
+  inheritAdminConfigSecret,
   listAdminChannels,
   listAdminConfigs,
   listAdminModels,
@@ -21,6 +22,31 @@ import { DataTable } from "./data-table";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { errorMessage, includesText, useAdminResource } from "./use-admin-resource";
 import { AdminViewLayout } from "./view-layout";
+
+const KEY_SOURCE_LABEL: Record<AdminConfigRecord["keySource"], string> = {
+  config: "独立 Key",
+  channel: "继承渠道",
+  none: "未配置",
+};
+
+function formatHost(value: string | null) {
+  if (!value) {
+    return null;
+  }
+  try {
+    return new URL(value).host;
+  } catch {
+    return value;
+  }
+}
+
+function describeEndpoint(record: AdminConfigRecord) {
+  if (!record.inheritsEndpoint) {
+    return record.endpoint;
+  }
+  const host = formatHost(record.effectiveEndpoint);
+  return host ? `继承 · ${host}` : "继承 · 渠道未配置 Base URL";
+}
 
 export function ConfigsView() {
   const [search, setSearch] = React.useState("");
@@ -88,12 +114,37 @@ export function ConfigsView() {
       await replaceAdminConfigSecret(secretRecord.id, apiKey);
       setRecords((current) =>
         current.map((record) =>
-          record.id === secretRecord.id ? { ...record, hasApiKey: true } : record
+          record.id === secretRecord.id
+            ? { ...record, hasApiKey: true, keySource: "config" }
+            : record
         )
       );
       setSecretRecord(null);
     } catch (replaceError) {
       setSecretError(errorMessage(replaceError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function inheritSecret() {
+    if (!secretRecord) {
+      return;
+    }
+    setSaving(true);
+    setSecretError(null);
+    try {
+      await inheritAdminConfigSecret(secretRecord.id);
+      setRecords((current) =>
+        current.map((record) =>
+          record.id === secretRecord.id
+            ? { ...record, hasApiKey: false, keySource: "channel" }
+            : record
+        )
+      );
+      setSecretRecord(null);
+    } catch (inheritError) {
+      setSecretError(errorMessage(inheritError));
     } finally {
       setSaving(false);
     }
@@ -152,8 +203,11 @@ export function ConfigsView() {
               cell: (record) => (
                 <div>
                   <p className="font-medium">{record.name}</p>
-                  <p className="mt-1 max-w-[36ch] truncate text-xs text-muted-foreground">
-                    {record.endpoint}
+                  <p
+                    className="mt-1 max-w-[36ch] truncate text-xs text-muted-foreground"
+                    title={record.effectiveEndpoint ?? undefined}
+                  >
+                    {describeEndpoint(record)}
                   </p>
                 </div>
               ),
@@ -191,7 +245,7 @@ export function ConfigsView() {
             {
               key: "key",
               header: "Key",
-              cell: (record) => (record.hasApiKey ? "已配置" : "未配置"),
+              cell: (record) => KEY_SOURCE_LABEL[record.keySource] ?? "未配置",
             },
             {
               key: "state",
@@ -263,6 +317,11 @@ export function ConfigsView() {
       <ConfigSecretDialog
         open={Boolean(secretRecord)}
         configName={secretRecord?.name ?? ""}
+        keySource={secretRecord?.keySource}
+        channelHasApiKey={
+          channels.find((channel) => channel.id === secretRecord?.channelId)
+            ?.hasApiKey ?? false
+        }
         saving={saving}
         serverError={secretError}
         onOpenChange={(open) => {
@@ -272,6 +331,7 @@ export function ConfigsView() {
           }
         }}
         onSubmit={replaceSecret}
+        onInherit={inheritSecret}
       />
       <DeleteConfirmDialog
         open={Boolean(deleting)}

@@ -26,6 +26,9 @@ export function ChannelForm({
   const [logoUrl, setLogoUrl] = React.useState("");
   const [websiteUrl, setWebsiteUrl] = React.useState("");
   const [statusPageUrl, setStatusPageUrl] = React.useState("");
+  const [baseUrl, setBaseUrl] = React.useState("");
+  const [apiKey, setApiKey] = React.useState("");
+  const [clearApiKey, setClearApiKey] = React.useState(false);
   const [sortOrder, setSortOrder] = React.useState("0");
   const [enabled, setEnabled] = React.useState(true);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
@@ -38,6 +41,9 @@ export function ChannelForm({
     setLogoUrl(record?.logoUrl ?? "");
     setWebsiteUrl(record?.websiteUrl ?? "");
     setStatusPageUrl(record?.statusPageUrl ?? "");
+    setBaseUrl(record?.baseUrl ?? "");
+    setApiKey("");
+    setClearApiKey(false);
     setSortOrder(String(record?.sortOrder ?? 0));
     setEnabled(record?.enabled ?? true);
     setErrors({});
@@ -57,14 +63,21 @@ export function ChannelForm({
       return;
     }
 
-    onSubmit({
+    const payload: Record<string, unknown> = {
       name,
       logoUrl: logoUrl || null,
       websiteUrl: websiteUrl || null,
       statusPageUrl: statusPageUrl || null,
+      baseUrl: baseUrl.trim() || null,
       sortOrder: parsedSortOrder,
       enabled,
-    });
+    };
+    if (apiKey.trim()) {
+      payload.apiKey = apiKey.trim();
+    } else if (clearApiKey) {
+      payload.clearApiKey = true;
+    }
+    onSubmit(payload);
   }
 
   return (
@@ -106,6 +119,41 @@ export function ChannelForm({
               onChange={(event) => setStatusPageUrl(event.target.value)}
             />
           </Field>
+        </div>
+        <div className="grid gap-4 rounded-md border border-border/70 p-3">
+          <div className="grid gap-1">
+            <p className="text-sm font-medium">API 信息</p>
+            <p className="text-xs text-muted-foreground">
+              监控项留空端点 / Key 时继承这里的配置，端点按 API 格式自动拼接 /v1/...
+            </p>
+          </div>
+          <Field label="API Base URL">
+            <TextInput
+              value={baseUrl}
+              placeholder="https://api.example.com"
+              onChange={(event) => setBaseUrl(event.target.value)}
+            />
+          </Field>
+          <Field label="API Key">
+            <TextInput
+              type="password"
+              value={apiKey}
+              autoComplete="new-password"
+              placeholder={record?.hasApiKey ? "已配置，留空不修改" : "可选"}
+              onChange={(event) => setApiKey(event.target.value)}
+            />
+          </Field>
+          {record?.hasApiKey ? (
+            <label className="inline-flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={clearApiKey}
+                disabled={apiKey.trim().length > 0}
+                onChange={(event) => setClearApiKey(event.target.checked)}
+              />
+              清除已保存的 Key
+            </label>
+          ) : null}
         </div>
         <Field label="排序" error={errors.sortOrder}>
           <TextInput

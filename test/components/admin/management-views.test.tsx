@@ -2,7 +2,13 @@
 
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 import { AdminShell } from "../../../src/components/admin/admin-shell";
 import type {
@@ -29,7 +35,8 @@ function jsonResponse(data: unknown, status = 200) {
 }
 
 function setupFetch() {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+    void _init;
     const path = String(input);
     if (path === "/api/admin/configs") {
       return jsonResponse([
@@ -51,7 +58,35 @@ function setupFetch() {
           checkIntervalSeconds: 30,
           region: "global",
           hasApiKey: true,
+          inheritsEndpoint: false,
+          keySource: "config",
+          effectiveEndpoint: "https://api.openai.com/v1/chat/completions",
           apiKey: "sk-live-secret",
+          createdAtMs: 1_700_000_000_000,
+          updatedAtMs: 1_700_000_000_000,
+        },
+        {
+          id: "config-inherited",
+          name: "Relay responses",
+          type: "openai",
+          modelId: "model-openai",
+          model: "gpt-4o",
+          templateId: null,
+          templateName: null,
+          channelId: "channel-openai",
+          channelName: "OpenAI Official",
+          channelLogoUrl: null,
+          endpoint: "",
+          apiFormat: "responses",
+          enabled: true,
+          isMaintenance: false,
+          groupName: null,
+          checkIntervalSeconds: null,
+          region: null,
+          hasApiKey: false,
+          inheritsEndpoint: true,
+          keySource: "channel",
+          effectiveEndpoint: "https://relay.example.com/v1/responses",
           createdAtMs: 1_700_000_000_000,
           updatedAtMs: 1_700_000_000_000,
         },
@@ -73,6 +108,9 @@ function setupFetch() {
           checkIntervalSeconds: null,
           region: null,
           hasApiKey: false,
+          inheritsEndpoint: false,
+          keySource: "none",
+          effectiveEndpoint: "https://generativelanguage.googleapis.com/v1beta/models",
           createdAtMs: 1_700_000_000_000,
           updatedAtMs: 1_700_000_000_000,
         },
@@ -124,6 +162,8 @@ function setupFetch() {
           logoUrl: null,
           websiteUrl: "https://openai.com/",
           statusPageUrl: "https://status.openai.com/",
+          baseUrl: "https://relay.example.com",
+          hasApiKey: true,
           sortOrder: 10,
           enabled: true,
           createdAtMs: 1_700_000_000_000,
@@ -225,10 +265,12 @@ describe("admin management views", () => {
     renderShell("configs");
 
     expect(await screen.findByText("OpenAI primary")).not.toBeNull();
-    expect(screen.getByText("OpenAI Official")).not.toBeNull();
+    expect(screen.getAllByText("OpenAI Official").length).toBeGreaterThan(0);
     expect(screen.getByText("30 秒")).not.toBeNull();
     expect(screen.getByText("global")).not.toBeNull();
-    expect(screen.getByText("已配置")).not.toBeNull();
+    expect(screen.getByText("独立 Key")).not.toBeNull();
+    expect(screen.getByText("继承渠道")).not.toBeNull();
+    expect(screen.getByText("继承 · relay.example.com")).not.toBeNull();
     expect(screen.getAllByText("未配置").length).toBeGreaterThan(0);
     expect(screen.queryByText(/sk-live-secret/)).toBeNull();
     expect(screen.queryByText(/批量/)).toBeNull();
@@ -247,6 +289,74 @@ describe("admin management views", () => {
     ).not.toBeNull();
     expect(screen.queryByText(/sk-live-secret/)).toBeNull();
     expect(screen.getByLabelText("新 API Key")).toHaveProperty("value", "");
+  });
+
+  it("lets configs with their own key switch back to the channel key", async () => {
+    const fetchMock = setupFetch();
+
+    renderShell("configs");
+
+    await screen.findByText("OpenAI primary");
+    fireEvent.click(screen.getAllByRole("button", { name: "替换 Key" })[0]);
+    const inheritButton = await screen.findByRole("button", {
+      name: "改为继承渠道 Key",
+    });
+    fetchMock.mockImplementationOnce(async () => jsonResponse({ ok: true, hasApiKey: false }));
+    fireEvent.click(inheritButton);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "替换 API Key" })).toBeNull()
+    );
+    expect(screen.getAllByText("继承渠道")).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/configs/config-openai/secret",
+      expect.objectContaining({ method: "DELETE" })
+    );
+  });
+
+  it("previews the inherited endpoint and fills the name from the model", async () => {
+    const fetchMock = setupFetch();
+
+    renderShell("configs");
+
+    fireEvent.click(await screen.findByRole("button", { name: "新增监控项" }));
+    const dialog = screen.getByRole("dialog", { name: "新增监控项" });
+    const selects = dialog.querySelectorAll("select");
+    fireEvent.change(selects[0], { target: { value: "channel-openai" } });
+    fireEvent.change(selects[2], { target: { value: "model-openai" } });
+    fireEvent.change(selects[3], { target: { value: "responses" } });
+
+    expect(
+      screen.getByText("将请求：https://relay.example.com/v1/responses")
+    ).not.toBeNull();
+
+    fetchMock.mockImplementationOnce(async () =>
+      jsonResponse({ id: "config-new", name: "gpt-4o" }, 201)
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存监控项" }));
+
+    const createCall = fetchMock.mock.calls.find(
+      ([path, init]) =>
+        path === "/api/admin/configs" && init?.method === "POST"
+    );
+    expect(createCall).toBeDefined();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body).toMatchObject({
+      name: "gpt-4o",
+      channelId: "channel-openai",
+      endpoint: "",
+      apiFormat: "responses",
+    });
+    expect(body).not.toHaveProperty("apiKey");
+  });
+
+  it("shows channel API base host and key status", async () => {
+    setupFetch();
+
+    renderShell("channels");
+
+    expect(await screen.findByText("relay.example.com")).not.toBeNull();
+    expect(screen.getByText("Key 已配置")).not.toBeNull();
   });
 
   it("renders the runtime cron cadence as read-only", async () => {

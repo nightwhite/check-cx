@@ -149,6 +149,13 @@ export async function replaceAdminConfigSecret(
   );
 }
 
+export async function inheritAdminConfigSecret(id: string): Promise<void> {
+  await requestJson<{ ok: boolean; hasApiKey: boolean }>(
+    `/api/admin/configs/${id}/secret`,
+    { method: "DELETE" }
+  );
+}
+
 export async function listAdminModels(): Promise<AdminModelRecord[]> {
   return requestJson<AdminModelRecord[]>("/api/admin/models");
 }

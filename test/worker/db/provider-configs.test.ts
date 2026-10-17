@@ -247,4 +247,90 @@ describe("provider config repository", () => {
       }),
     ]);
   });
+
+  it("inherits channel base URL and key when config fields are empty", async () => {
+    const db = await createMigratedDatabase();
+    const encryptionKey = "0123456789abcdef0123456789abcdef";
+    const channelKey = await encryptProviderKey("sk-channel", encryptionKey);
+    const ownKey = await encryptProviderKey("sk-own", encryptionKey);
+
+    db.prepare(
+      `INSERT INTO channels (id, name, base_url, api_key_ciphertext, api_key_nonce, api_key_version, created_at_ms, updated_at_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "channel-1",
+      "Relay",
+      "https://relay.example.com/",
+      channelKey.ciphertext,
+      channelKey.nonce,
+      channelKey.version,
+      1,
+      1
+    );
+    db.prepare(
+      "INSERT INTO channels (id, name, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?)"
+    ).run("channel-empty", "Empty", 1, 1);
+    db.prepare(
+      "INSERT INTO check_models (id, type, model, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?)"
+    ).run("model-1", "openai", "gpt-5@low", 1, 1);
+    const insertConfig = db.prepare(
+      `INSERT INTO check_configs (
+         id, name, type, model_id, channel_id, endpoint, api_format,
+         api_key_ciphertext, api_key_nonce, api_key_version,
+         enabled, is_maintenance, created_at_ms, updated_at_ms
+       ) VALUES (?, ?, 'openai', 'model-1', ?, ?, ?, ?, ?, ?, 1, 0, 1, 1)`
+    );
+    insertConfig.run("a-inherit", "Inherit", "channel-1", "", "responses", null, null, 1);
+    insertConfig.run(
+      "b-override",
+      "Override",
+      "channel-1",
+      "https://direct.example.com/v1/chat/completions",
+      "chat_completions",
+      ownKey.ciphertext,
+      ownKey.nonce,
+      ownKey.version
+    );
+    insertConfig.run("c-no-base", "No base", "channel-empty", "", "responses", ownKey.ciphertext, ownKey.nonce, ownKey.version);
+    insertConfig.run(
+      "d-no-key",
+      "No key",
+      "channel-empty",
+      "https://direct.example.com/v1/responses",
+      "responses",
+      null,
+      null,
+      1
+    );
+
+    const configs = await loadEnabledProviderConfigs(
+      new D1SqliteAdapter(db),
+      encryptionKey
+    );
+
+    expect(configs).toEqual([
+      expect.objectContaining({
+        id: "a-inherit",
+        endpoint: "https://relay.example.com/v1/responses",
+        apiKey: "sk-channel",
+      }),
+      expect.objectContaining({
+        id: "b-override",
+        endpoint: "https://direct.example.com/v1/chat/completions",
+        apiKey: "sk-own",
+      }),
+      expect.objectContaining({
+        id: "c-no-base",
+        endpoint: "",
+        configError: "渠道未配置 Base URL",
+      }),
+      expect.objectContaining({
+        id: "d-no-key",
+        apiKey: "",
+        configError: "未配置 API Key",
+      }),
+    ]);
+    expect(configs[0]).not.toHaveProperty("configError");
+    expect(configs[1]).not.toHaveProperty("configError");
+  });
 });

@@ -1,4 +1,8 @@
-import { decryptProviderKey } from "../../crypto/provider-key";
+import { buildEndpointFromBaseUrl } from "../../../../lib/utils/endpoint-builder";
+import {
+  decryptProviderKey,
+  type EncryptedProviderKey,
+} from "../../crypto/provider-key";
 import type { WorkerProviderConfig, WorkerProviderType } from "../../providers";
 
 export interface D1StatementWithAll {
@@ -24,6 +28,10 @@ interface ProviderConfigRow {
   channel_id: string | null;
   channel_name: string | null;
   channel_logo_url: string | null;
+  channel_base_url: string | null;
+  channel_api_key_ciphertext: string | null;
+  channel_api_key_nonce: string | null;
+  channel_api_key_version: number | null;
   check_interval_seconds: number | null;
   effective_check_interval_seconds: number;
   last_checked_at_ms: number | null;
@@ -68,25 +76,70 @@ function parseHeaderRecord(value: string | null): Record<string, string> | null 
   return entries.length > 0 ? Object.fromEntries(entries) : null;
 }
 
-async function decryptApiKey(
+function toEncryptedKey(
+  ciphertext: string | null,
+  nonce: string | null,
+  version: number | null
+): EncryptedProviderKey | null {
+  if (!ciphertext || !nonce) {
+    return null;
+  }
+  return { ciphertext, nonce, version: version ?? 1 };
+}
+
+interface ResolvedCredentials {
+  endpoint: string;
+  apiKey: string;
+  configError?: string;
+}
+
+// 监控项自身的端点 / Key 优先，留空时继承所属渠道的 Base URL / Key。
+// 无法解析时不抛异常，交给检测阶段返回 error，避免拖垮整轮任务。
+async function resolveCredentials(
   row: ProviderConfigRow,
   encryptionKey: string
-): Promise<string> {
-  if (!row.api_key_ciphertext || !row.api_key_nonce) {
-    if (row.is_maintenance) {
-      return "";
-    }
-    throw new Error(`Missing encrypted API key for config ${row.id}`);
+): Promise<ResolvedCredentials> {
+  const ownEndpoint = row.endpoint.trim();
+  const endpoint =
+    ownEndpoint ||
+    (row.channel_base_url
+      ? buildEndpointFromBaseUrl({
+          baseUrl: row.channel_base_url,
+          type: assertProviderType(row.type),
+          apiFormat: row.api_format,
+          model: row.model,
+        }) ?? ""
+      : "");
+  const encryptedKey =
+    toEncryptedKey(
+      row.api_key_ciphertext,
+      row.api_key_nonce,
+      row.api_key_version
+    ) ??
+    toEncryptedKey(
+      row.channel_api_key_ciphertext,
+      row.channel_api_key_nonce,
+      row.channel_api_key_version
+    );
+
+  if (row.is_maintenance) {
+    return { endpoint, apiKey: "" };
+  }
+  if (!endpoint) {
+    return { endpoint, apiKey: "", configError: "渠道未配置 Base URL" };
+  }
+  if (!encryptedKey) {
+    return { endpoint, apiKey: "", configError: "未配置 API Key" };
   }
 
-  return decryptProviderKey(
-    {
-      ciphertext: row.api_key_ciphertext,
-      nonce: row.api_key_nonce,
-      version: row.api_key_version ?? 1,
-    },
-    encryptionKey
-  );
+  try {
+    return {
+      endpoint,
+      apiKey: await decryptProviderKey(encryptedKey, encryptionKey),
+    };
+  } catch {
+    return { endpoint, apiKey: "", configError: "API Key 解密失败" };
+  }
 }
 
 export async function loadEnabledProviderConfigs(
@@ -115,6 +168,10 @@ export async function loadEnabledProviderConfigs(
          c.channel_id,
          ch.name AS channel_name,
          ch.logo_url AS channel_logo_url,
+         ch.base_url AS channel_base_url,
+         ch.api_key_ciphertext AS channel_api_key_ciphertext,
+         ch.api_key_nonce AS channel_api_key_nonce,
+         ch.api_key_version AS channel_api_key_version,
          c.check_interval_seconds,
          COALESCE(c.check_interval_seconds, site.default_check_interval_seconds)
            AS effective_check_interval_seconds,
@@ -141,25 +198,32 @@ export async function loadEnabledProviderConfigs(
     .all<ProviderConfigRow>();
 
   return Promise.all(
-    (rows.results ?? []).map(async (row) => ({
-      id: row.id,
-      name: row.name,
-      type: assertProviderType(row.type),
-      endpoint: row.endpoint,
-      apiFormat: row.api_format,
-      model: row.model,
-      apiKey: await decryptApiKey(row, encryptionKey),
-      isMaintenance: Boolean(row.is_maintenance),
-      requestHeaders: parseHeaderRecord(row.request_header_json),
-      metadata: parseJsonRecord(row.metadata_json),
-      groupName: row.group_name,
-      channelId: row.channel_id,
-      channelName: row.channel_name,
-      channelLogoUrl: row.channel_logo_url,
-      checkIntervalSeconds: row.check_interval_seconds,
-      effectiveCheckIntervalSeconds: row.effective_check_interval_seconds,
-      lastCheckedAtMs: row.last_checked_at_ms,
-      region: row.region,
-    }))
+    (rows.results ?? []).map(async (row) => {
+      const { endpoint, apiKey, configError } = await resolveCredentials(
+        row,
+        encryptionKey
+      );
+      return {
+        id: row.id,
+        name: row.name,
+        type: assertProviderType(row.type),
+        endpoint,
+        apiFormat: row.api_format,
+        model: row.model,
+        apiKey,
+        ...(configError ? { configError } : {}),
+        isMaintenance: Boolean(row.is_maintenance),
+        requestHeaders: parseHeaderRecord(row.request_header_json),
+        metadata: parseJsonRecord(row.metadata_json),
+        groupName: row.group_name,
+        channelId: row.channel_id,
+        channelName: row.channel_name,
+        channelLogoUrl: row.channel_logo_url,
+        checkIntervalSeconds: row.check_interval_seconds,
+        effectiveCheckIntervalSeconds: row.effective_check_interval_seconds,
+        lastCheckedAtMs: row.last_checked_at_ms,
+        region: row.region,
+      };
+    })
   );
 }

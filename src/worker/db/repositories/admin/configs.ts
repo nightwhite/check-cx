@@ -1,9 +1,11 @@
+import { buildEndpointFromBaseUrl } from "../../../../../lib/utils/endpoint-builder";
 import type { EncryptedProviderKey } from "../../../crypto/provider-key";
 import {
   bool,
   changed,
   type AdminConfigRecord,
   type AdminD1Executor,
+  type AdminKeySource,
   type AdminProviderType,
   type CreateAdminConfigInput,
   type UpdateAdminConfigInput,
@@ -20,6 +22,8 @@ interface ConfigRow {
   channel_id: string | null;
   channel_name: string | null;
   channel_logo_url: string | null;
+  channel_base_url: string | null;
+  channel_has_api_key: number | null;
   endpoint: string;
   api_format: AdminConfigRecord["apiFormat"];
   enabled: number;
@@ -45,6 +49,33 @@ interface ChannelIdRow {
   id: string;
 }
 
+interface ConfigCredentialsRow {
+  id: string;
+  has_api_key: number;
+}
+
+function resolveKeySource(row: ConfigRow): AdminKeySource {
+  if (bool(row.has_api_key)) {
+    return "config";
+  }
+  return bool(row.channel_has_api_key) ? "channel" : "none";
+}
+
+function resolveEffectiveEndpoint(row: ConfigRow): string | null {
+  if (row.endpoint.trim()) {
+    return row.endpoint;
+  }
+  if (!row.channel_base_url) {
+    return null;
+  }
+  return buildEndpointFromBaseUrl({
+    baseUrl: row.channel_base_url,
+    type: row.type,
+    apiFormat: row.api_format,
+    model: row.model,
+  });
+}
+
 function toRecord(row: ConfigRow): AdminConfigRecord {
   return {
     id: row.id,
@@ -65,16 +96,19 @@ function toRecord(row: ConfigRow): AdminConfigRecord {
     checkIntervalSeconds: row.check_interval_seconds,
     region: row.region,
     hasApiKey: bool(row.has_api_key),
+    inheritsEndpoint: row.endpoint.trim().length === 0,
+    keySource: resolveKeySource(row),
+    effectiveEndpoint: resolveEffectiveEndpoint(row),
     createdAtMs: row.created_at_ms,
     updatedAtMs: row.updated_at_ms,
   };
 }
 
-function bindEncryptedKey(encryptedKey: EncryptedProviderKey) {
+function bindEncryptedKey(encryptedKey: EncryptedProviderKey | null) {
   return [
-    encryptedKey.ciphertext,
-    encryptedKey.nonce,
-    encryptedKey.version,
+    encryptedKey?.ciphertext ?? null,
+    encryptedKey?.nonce ?? null,
+    encryptedKey?.version ?? 1,
   ] as const;
 }
 
@@ -118,6 +152,9 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
           `SELECT c.id, c.name, c.type, c.model_id, m.model,
                   m.template_id, t.name AS template_name,
                   c.channel_id, ch.name AS channel_name, ch.logo_url AS channel_logo_url,
+                  ch.base_url AS channel_base_url,
+                  CASE WHEN ch.api_key_ciphertext IS NOT NULL AND ch.api_key_nonce IS NOT NULL
+                    THEN 1 ELSE 0 END AS channel_has_api_key,
                   c.endpoint, c.api_format, c.enabled, c.is_maintenance, c.group_name,
                   c.check_interval_seconds, c.region,
                   CASE WHEN c.api_key_ciphertext IS NOT NULL AND c.api_key_nonce IS NOT NULL
@@ -155,6 +192,20 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
         .bind(id)
         .first<ChannelIdRow>();
       return Boolean(row);
+    },
+
+    async findCredentials(id: string) {
+      const row = await db
+        .prepare(
+          `SELECT id,
+                  CASE WHEN api_key_ciphertext IS NOT NULL AND api_key_nonce IS NOT NULL
+                    THEN 1 ELSE 0 END AS has_api_key
+           FROM check_configs
+           WHERE id = ?`
+        )
+        .bind(id)
+        .first<ConfigCredentialsRow>();
+      return row ? { id: row.id, hasApiKey: bool(row.has_api_key) } : null;
     },
 
     async update(id: string, input: UpdateAdminConfigInput) {
@@ -199,6 +250,18 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
            WHERE id = ?`
         )
         .bind(ciphertext, nonce, version, nowMs, id)
+        .run();
+      return changed(result);
+    },
+
+    async clearSecret(id: string, nowMs: number) {
+      const result = await db
+        .prepare(
+          `UPDATE check_configs
+           SET api_key_ciphertext = NULL, api_key_nonce = NULL, updated_at_ms = ?
+           WHERE id = ?`
+        )
+        .bind(nowMs, id)
         .run();
       return changed(result);
     },
