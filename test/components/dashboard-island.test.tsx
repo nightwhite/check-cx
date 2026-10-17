@@ -269,10 +269,15 @@ describe("DashboardIsland", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("restarts the next-check countdown after an automatic refresh", async () => {
-    const now = new Date("2026-05-03T00:00:00.000Z");
-    vi.setSystemTime(now);
-    const fetchMock = vi.fn(async () => jsonResponse(baseData));
+  it("counts down to the next server check and refetches after it", async () => {
+    // lastUpdated = 00:00:00，pollIntervalMs = 1s，当前时间 00:00:00.400
+    vi.setSystemTime(new Date("2026-05-03T00:00:00.400Z"));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(baseData))
+      .mockResolvedValueOnce(
+        jsonResponse({ ...baseData, lastUpdated: "2026-05-03T00:00:02.000Z" })
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     render(<DashboardIsland />);
@@ -282,17 +287,43 @@ describe("DashboardIsland", () => {
     expect(screen.getByText("下次检查")).not.toBeNull();
     expect(screen.getByText("1s")).not.toBeNull();
 
+    // 到点后先显示「检查中」，留出快照写入的余量后再拉取
     await act(async () => {
       vi.advanceTimersByTime(1_000);
-      vi.setSystemTime(new Date(now.getTime() + 1_000));
+    });
+    expect(screen.getByText("检查中…")).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
       await Promise.resolve();
     });
     await act(async () => {
       await Promise.resolve();
     });
-
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getByText("1s")).not.toBeNull();
+  });
+
+  it("hydrates from inline snapshot data without an extra request", async () => {
+    const script = document.createElement("script");
+    script.type = "application/json";
+    script.id = "dashboard-initial-data";
+    script.textContent = JSON.stringify({ ...baseData, trendPeriod: "30d" });
+    document.head.appendChild(script);
+    const fetchMock = vi.fn(async () => jsonResponse(baseData));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const { container } = render(<DashboardIsland />);
+      expect(screen.getByRole("heading", { name: "gpt-5.5" })).not.toBeNull();
+      expect(
+        container.querySelector("[data-dashboard-ready='true']")
+      ).not.toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      script.remove();
+    }
   });
 
   it("uses the URL period and marks the dashboard ready for screenshots", async () => {
@@ -310,7 +341,7 @@ describe("DashboardIsland", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/dashboard?trendPeriod=7d&screenshot=1",
+      "/api/dashboard?trendPeriod=7d&compact=1&screenshot=1",
       expect.objectContaining({
         cache: "no-store",
         headers: { Accept: "application/json" },
@@ -387,7 +418,7 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByRole("heading", { name: "Status" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "AI Channel Status" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "模型类型筛选 OpenAI" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("heading", { name: "Check CX" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "SU8", level: 2 })).toBeNull();
@@ -407,7 +438,7 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByRole("heading", { name: "Status" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "AI Channel Status" })).not.toBeNull();
     expect(screen.getByText("Production AI status")).not.toBeNull();
     expect(screen.getByRole("heading", { name: "OpenAI Official" })).not.toBeNull();
     expect(screen.getByRole("link", { name: "官方状态页" }).getAttribute("href")).toBe("https://status.openai.com/");
@@ -417,7 +448,7 @@ describe("DashboardIsland", () => {
         .filter((link) => link.getAttribute("href") === "https://status.example.com")
     ).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "gpt-5.5" })).not.toBeNull();
-    expect(screen.getByText("最近 2 次检查")).not.toBeNull();
+    expect(screen.getByText("最近 2 次检查 · 约 24 小时")).not.toBeNull();
   });
 
   it("shows status segment check time in UTC+8 on hover", async () => {
@@ -447,7 +478,7 @@ describe("DashboardIsland", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByRole("heading", { name: "Status" })).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "AI Channel Status" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "模型类型筛选 Claude" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "OpenAI" })).toBeNull();
@@ -507,9 +538,9 @@ describe("DashboardIsland", () => {
       await Promise.resolve();
     });
     expect(screen.getByText("90.00%")).not.toBeNull();
-    expect(screen.getByText("最近 2 次检查")).not.toBeNull();
-    expect(screen.queryByText("过去")).toBeNull();
-    expect(screen.queryByText("现在")).toBeNull();
+    expect(screen.getByRole("list", { name: "最近 2 次检查，左旧右新" })).not.toBeNull();
+    expect(screen.getByText("5/2 08:00")).not.toBeNull();
+    expect(screen.getByText("5/3 08:00")).not.toBeNull();
     expect(screen.getByText("Provider returned HTTP 500")).not.toBeNull();
     expect(screen.getByText("官方状态：OpenAI incident")).not.toBeNull();
   });
@@ -576,7 +607,7 @@ describe("DashboardIsland", () => {
     });
 
     expect(screen.getByTestId("model-latency").textContent).toBe("1,405 ms");
-    expect(screen.getByText("08:00:00")).not.toBeNull();
+    expect(screen.getByTitle("最近检查 2026/5/3 08:00:00")).not.toBeNull();
     expect(screen.getByText("近 30 天可用性")).not.toBeNull();
   });
 

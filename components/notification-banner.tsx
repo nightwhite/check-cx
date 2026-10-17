@@ -1,8 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { X, AlertCircle, Info, AlertTriangle } from "lucide-react";
 import { z } from "zod";
 import type { SystemNotificationRow } from "@/lib/types/database";
@@ -16,6 +14,8 @@ const systemNotificationSchema = z.object({
   created_at: z.string(),
 });
 const systemNotificationsSchema = z.array(systemNotificationSchema);
+
+const NotificationMarkdown = lazy(() => import("./notification-markdown"));
 
 export function NotificationBanner() {
   const [notifications, setNotifications] = useState<SystemNotificationRow[]>([]);
@@ -75,16 +75,16 @@ export function NotificationBanner() {
       <div className="mx-auto flex max-w-[1600px] items-start gap-3 md:items-center">
         <Icon className="mt-0.5 h-4 w-4 shrink-0 md:mt-0" />
         <div className="flex-1 [&_a]:font-medium [&_a]:underline [&_a]:underline-offset-2 [&_p]:leading-relaxed">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {notification.message}
-          </ReactMarkdown>
+          <Suspense fallback={<p>{notification.message}</p>}>
+            <NotificationMarkdown message={notification.message} />
+          </Suspense>
         </div>
         <button
           onClick={() => setVisible(false)}
           className="ml-2 rounded-full p-1 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
         >
           <X className="h-4 w-4" />
-          <span className="sr-only">Dismiss</span>
+          <span className="sr-only">关闭公告</span>
         </button>
       </div>
     </div>

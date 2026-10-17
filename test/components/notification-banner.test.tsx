@@ -62,6 +62,6 @@ describe("NotificationBanner", () => {
       await Promise.resolve();
     });
 
-    expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "关闭公告" })).toBeNull();
   });
 });

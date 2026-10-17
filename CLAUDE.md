@@ -144,8 +144,8 @@ lib/
 3. **Provider 检查**: `lib/providers/ai-sdk-check.ts` 使用 Vercel AI SDK 并发执行所有配置的检查
 4. **延迟测量**: 测量首 token 延迟和端点 Ping 延迟
 5. **状态判定**:
-   - `operational`: 请求成功且延迟 ≤ 6000ms
-   - `degraded`: 请求成功但延迟 > 6000ms
+   - `operational`: 请求成功且延迟 ≤ 30000ms
+   - `degraded`: 请求成功但延迟 > 30000ms
    - `failed`: 请求失败或超时（默认超时 15 秒）
    - `maintenance`: 配置标记为维护模式
 6. **三类 Provider 支持**:

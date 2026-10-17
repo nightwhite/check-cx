@@ -25,11 +25,12 @@ export const STATUS_LABEL: Record<string, string> = {
   error: "错误",
 };
 
+// 验证失败同属不可用，与「异常」共用红色系，避免在色带里和「延迟」的琥珀色混淆
 export const STATUS_DOT_CLASS: Record<string, string> = {
   operational: "bg-emerald-500",
   degraded: "bg-amber-500",
   failed: "bg-rose-500",
-  validation_failed: "bg-orange-500",
+  validation_failed: "bg-rose-500",
   maintenance: "bg-sky-500",
   error: "bg-red-600",
 };
@@ -38,10 +39,19 @@ export const STATUS_PILL_CLASS: Record<string, string> = {
   operational: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   degraded: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   failed: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-  validation_failed: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300",
+  validation_failed: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
   maintenance: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
   error: "border-red-600/30 bg-red-600/10 text-red-700 dark:text-red-300",
 };
+
+// 色带图例：按「可用 / 变慢 / 不可用 / 维护」归类，不逐一列出失败子类型
+export const HISTORY_LEGEND: Array<{ label: string; className: string }> = [
+  { label: "正常", className: "bg-emerald-500" },
+  { label: "延迟", className: "bg-amber-500" },
+  { label: "失败", className: "bg-rose-500" },
+  { label: "维护", className: "bg-sky-500" },
+  { label: "无数据", className: "bg-foreground/[0.08]" },
+];
 
 export const PROVIDER_LABEL: Record<string, string> = {
   openai: "OpenAI",
@@ -89,6 +99,42 @@ export function formatTime(value: string | null | undefined) {
     return "暂无数据";
   }
   return chinaTimeFormatter.format(new Date(value));
+}
+
+const chinaDateMinuteFormatter = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+// 色带左端刻度：跨度接近一天时带上日期，避免只看时刻产生歧义
+export function formatHistoryStart(value: string, spanMs: number) {
+  return spanMs >= 20 * 60 * 60 * 1000
+    ? chinaDateMinuteFormatter.format(new Date(value))
+    : chinaClockFormatter.format(new Date(value));
+}
+
+export function formatDuration(ms: number) {
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+  if (minutes < 60) {
+    return `${minutes} 分钟`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) {
+    return `约 ${hours} 小时`;
+  }
+  return `约 ${Math.round(hours / 24)} 天`;
+}
+
+export function getHistorySpanMs(history: Array<{ checkedAt: string }>) {
+  if (history.length < 2) {
+    return 0;
+  }
+  const times = history.map((item) => Date.parse(item.checkedAt));
+  return Math.max(...times) - Math.min(...times);
 }
 
 export function formatClock(value: string | null | undefined) {

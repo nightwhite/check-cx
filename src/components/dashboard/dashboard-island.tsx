@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Activity,
   Check,
@@ -25,14 +32,20 @@ import {
   FAILURE_STATUSES,
   PERIODS,
   STATUS_DOT_CLASS,
+  formatClock,
   formatTime,
   getEffectiveStatus,
   getProviderFamily,
 } from "./dashboard-shared";
-import { ModelCollection, type ModelViewMode } from "./model-cards";
+import { HistoryLegend, ModelCollection, type ModelViewMode } from "./model-cards";
 import { ThemeToggle } from "./theme-toggle";
 
 const ALL_CHANNELS = "all";
+const INITIAL_DATA_ELEMENT_ID = "dashboard-initial-data";
+// 预计检查时间到点后，快照写入还需要等本轮检测全部完成，留出余量再拉取
+const REFRESH_GRACE_MS = 3_000;
+// 到点后快照仍未更新时的重试间隔上限
+const REFRESH_RETRY_MS = 15_000;
 const COLLAPSED_CHANNELS_STORAGE_KEY = "check-cx:collapsed-channels";
 const VIEW_MODE_STORAGE_KEY = "check-cx:view-mode";
 
@@ -198,11 +211,39 @@ function isScreenshotMode() {
   return new URLSearchParams(window.location.search).get("screenshot") === "1";
 }
 
-function computeRemainingMs(nextRefreshAt: number | null) {
-  if (nextRefreshAt === null) {
+// Worker 在返回首页 HTML 时内联当前快照，首屏无需再等一次 API 往返
+function readInitialData(period: AvailabilityPeriod): DashboardData | null {
+  if (typeof document === "undefined" || isScreenshotMode()) {
     return null;
   }
-  return Math.max(0, nextRefreshAt - Date.now());
+  const element = document.getElementById(INITIAL_DATA_ELEMENT_ID);
+  if (!element?.textContent) {
+    return null;
+  }
+  try {
+    const data = JSON.parse(element.textContent) as DashboardData;
+    return data.trendPeriod === period && Array.isArray(data.channels) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+// 下次检查时间以服务端最近一次检查为准，而不是浏览器拿到数据的时刻
+function getNextCheckAt(data: DashboardData | null) {
+  if (!data?.pollIntervalMs || data.pollIntervalMs <= 0) {
+    return null;
+  }
+  const lastCheckedAt = data.lastUpdated ? Date.parse(data.lastUpdated) : Number.NaN;
+  return Number.isNaN(lastCheckedAt) ? null : lastCheckedAt + data.pollIntervalMs;
+}
+
+function getRefreshDelayMs(data: DashboardData, now: number) {
+  const retryMs = Math.min(REFRESH_RETRY_MS, data.pollIntervalMs);
+  const nextCheckAt = getNextCheckAt(data);
+  if (nextCheckAt === null || nextCheckAt <= now) {
+    return retryMs;
+  }
+  return nextCheckAt - now + Math.min(REFRESH_GRACE_MS, retryMs);
 }
 
 function getOverallChannelStatus(channels: DashboardChannel[]): HealthStatus | "unknown" {
@@ -323,7 +364,54 @@ function ProviderFamilySwitch({
   ];
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const activeLabel = activeFamily === "all" ? "全部" : activeFamily;
+  const activeIndex = Math.max(
+    0,
+    options.findIndex(
+      (option) => option.value.toLowerCase() === activeFamily.toLowerCase()
+    )
+  );
+
+  // 打开后把焦点放到当前选项上，方向键可在选项间移动
+  useEffect(() => {
+    if (isOpen) {
+      optionRefs.current[activeIndex]?.focus();
+    }
+  }, [activeIndex, isOpen]);
+
+  const closeAndFocusTrigger = () => {
+    setIsOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const onListKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const current = optionRefs.current.findIndex(
+      (element) => element === document.activeElement
+    );
+    let next: number | null = null;
+    if (event.key === "ArrowDown") {
+      next = (current + 1) % options.length;
+    } else if (event.key === "ArrowUp") {
+      next = (current - 1 + options.length) % options.length;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = options.length - 1;
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeAndFocusTrigger();
+      return;
+    } else if (event.key === "Tab") {
+      setIsOpen(false);
+      return;
+    }
+    if (next !== null) {
+      event.preventDefault();
+      optionRefs.current[next]?.focus();
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -335,28 +423,28 @@ function ProviderFamilySwitch({
         setIsOpen(false);
       }
     };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsOpen(false);
-      }
-    };
 
     document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
     };
   }, [isOpen]);
 
   return (
     <div ref={rootRef} className="relative shrink-0 sm:min-w-[150px]">
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={`模型类型筛选 ${activeLabel}`}
         onClick={() => setIsOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            setIsOpen(true);
+          }
+        }}
         className={cn(
           "flex h-8 w-full items-center justify-between gap-2 rounded-full border bg-background/75 px-3 text-left text-sm transition",
           isOpen
@@ -383,21 +471,26 @@ function ProviderFamilySwitch({
         <div
           role="listbox"
           aria-label="模型类型筛选"
+          onKeyDown={onListKeyDown}
           className="absolute left-0 top-12 z-30 w-full min-w-[220px] overflow-hidden rounded-2xl border border-border/70 bg-background/95 p-1.5 shadow-xl shadow-foreground/10 backdrop-blur"
         >
-          {options.map((option) => {
+          {options.map((option, index) => {
             const isActive =
               activeFamily.toLowerCase() === option.value.toLowerCase();
 
             return (
               <button
                 key={option.value}
+                ref={(element) => {
+                  optionRefs.current[index] = element;
+                }}
                 type="button"
                 role="option"
                 aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => {
                   setProviderFamily(option.value);
-                  setIsOpen(false);
+                  closeAndFocusTrigger();
                 }}
                 className={cn(
                   "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
@@ -488,12 +581,14 @@ function ChannelSection({
   period,
   view,
   collapsed,
+  showHealthMeter,
   onToggleCollapsed,
 }: {
   channel: DashboardChannel;
   period: AvailabilityPeriod;
   view: ModelViewMode;
   collapsed: boolean;
+  showHealthMeter: boolean;
   onToggleCollapsed: () => void;
 }) {
   const bodyId = `channel-body-${channel.id}`;
@@ -519,7 +614,7 @@ function ChannelSection({
               {formatChannelSummary(channel)}
             </span>
           </div>
-          <HealthMeter channel={channel} />
+          {showHealthMeter && <HealthMeter channel={channel} />}
         </div>
         <div className="flex items-center gap-0.5">
           {channel.statusPageUrl && (
@@ -703,13 +798,13 @@ function ChannelChips({
 
 function LoadingState() {
   return (
-    <div className="space-y-3">
-      <div className="h-16 animate-pulse rounded-xl border border-border/50 bg-muted/40" />
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-2.5">
-        {Array.from({ length: 8 }).map((_, index) => (
+    <div aria-busy="true" aria-label="加载中" className="rounded-2xl border border-border/50 bg-background/60">
+      <div className="h-[53px] border-b border-border/40" />
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-2.5 p-2.5">
+        {Array.from({ length: 4 }).map((_, index) => (
           <div
             key={index}
-            className="h-32 animate-pulse rounded-xl border border-border/50 bg-muted/30"
+            className="h-[148px] animate-pulse rounded-xl border border-border/50 bg-muted/30"
           />
         ))}
       </div>
@@ -717,9 +812,21 @@ function LoadingState() {
   );
 }
 
+// 站点标题去掉与 logo 重复的站点名，例如「SU8.Codes Status」在 logo 旁显示为「Status」
+function getHeadingText(site: DashboardData["site"] | undefined) {
+  const title = site?.statusTitle?.trim() || "Status";
+  if (!site?.logoUrl || !site.siteName) {
+    return title;
+  }
+  const stripped = title.startsWith(site.siteName)
+    ? title.slice(site.siteName.length).trim()
+    : title;
+  return stripped || title;
+}
+
 export function DashboardIsland() {
-  const [data, setData] = useState<DashboardData | null>(null);
   const [period, setPeriod] = useState<AvailabilityPeriod>(getInitialPeriod);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [query, setQuery] = useState("");
   const [providerFamily, setProviderFamily] = useState(getInitialProviderFamily);
   const [activeChannel, setActiveChannel] = useState(getInitialChannel);
@@ -729,10 +836,11 @@ export function DashboardIsland() {
   const [view, setViewState] = useState<ModelViewMode>(readViewMode);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(null);
-  const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [lastAttemptAt, setLastAttemptAt] = useState(() => Date.now());
   const requestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const skipInitialLoadRef = useRef(false);
 
   const loadDashboard = useCallback(async () => {
     const requestId = requestIdRef.current + 1;
@@ -743,7 +851,7 @@ export function DashboardIsland() {
     setIsLoading(true);
     try {
       const screenshotMode = isScreenshotMode();
-      const searchParams = new URLSearchParams({ trendPeriod: period });
+      const searchParams = new URLSearchParams({ trendPeriod: period, compact: "1" });
       if (screenshotMode) {
         searchParams.set("screenshot", "1");
       }
@@ -760,11 +868,7 @@ export function DashboardIsland() {
         return;
       }
       setData(nextData);
-      setNextRefreshAt(
-        nextData.pollIntervalMs && nextData.pollIntervalMs > 0
-          ? Date.now() + nextData.pollIntervalMs
-          : null
-      );
+      setNow(Date.now());
       setErrorMessage(null);
     } catch (error) {
       if (controller.signal.aborted) {
@@ -774,42 +878,54 @@ export function DashboardIsland() {
     } finally {
       if (requestId === requestIdRef.current) {
         setIsLoading(false);
+        setLastAttemptAt(Date.now());
       }
     }
   }, [period]);
 
+  // 静态 HTML 与首次 hydrate 都按「无数据」渲染以保持一致，随后在绘制前同步换成内联快照，
+  // 并跳过首次的重复请求
+  useLayoutEffect(() => {
+    const initialData = readInitialData(period);
+    if (initialData) {
+      skipInitialLoadRef.current = true;
+      setData(initialData);
+      setIsLoading(false);
+    }
+    // 仅在挂载时读取一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
+    if (skipInitialLoadRef.current) {
+      skipInitialLoadRef.current = false;
+      return;
+    }
     loadDashboard().catch(() => undefined);
     return () => {
       abortControllerRef.current?.abort();
     };
   }, [loadDashboard]);
 
+  // 预计下一轮检查完成后再拉取；快照尚未更新或请求失败时按较短间隔重试
   useEffect(() => {
-    const intervalMs = data?.pollIntervalMs;
-    if (!intervalMs || intervalMs <= 0) {
+    if (!data?.pollIntervalMs || data.pollIntervalMs <= 0) {
       return;
     }
-
-    const interval = window.setInterval(() => {
+    const timeout = window.setTimeout(() => {
       loadDashboard().catch(() => undefined);
-    }, intervalMs);
+    }, getRefreshDelayMs(data, Date.now()));
+    return () => window.clearTimeout(timeout);
+  }, [data, lastAttemptAt, loadDashboard]);
 
-    return () => window.clearInterval(interval);
-  }, [data?.pollIntervalMs, loadDashboard]);
-
+  const nextCheckAt = getNextCheckAt(data);
   useEffect(() => {
-    if (nextRefreshAt === null) {
-      setTimeToNextRefresh(null);
+    if (nextCheckAt === null) {
       return;
     }
-    const update = () => {
-      setTimeToNextRefresh(computeRemainingMs(nextRefreshAt));
-    };
-    update();
-    const interval = window.setInterval(update, 1000);
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
-  }, [nextRefreshAt]);
+  }, [nextCheckAt]);
 
   const providerFamilies = useMemo(() => getProviderFamilies(data), [data]);
   const activeProviderFamily = useMemo(() => {
@@ -875,13 +991,23 @@ export function DashboardIsland() {
       return next;
     });
   }, []);
-  const countdown = formatCountdown(timeToNextRefresh);
+  // 超过一个检测周期仍未拿到新快照，说明后台检测可能卡住，明确提示而不是一直显示「检查中」
+  const countdown =
+    nextCheckAt === null || !data
+      ? null
+      : nextCheckAt > now
+        ? formatCountdown(nextCheckAt - now)
+        : now - nextCheckAt > data.pollIntervalMs
+          ? "暂未更新"
+          : "检查中…";
 
   const allVisibleChannels = useMemo(
     () => (data?.channels ?? []).filter((channel) => channel.models.length > 0),
     [data]
   );
   const siteName = data?.site?.siteName ?? "Status";
+  const showProviderFilter =
+    providerFamilies.length > 1 || activeProviderFamily !== "all";
 
   return (
     <section
@@ -897,14 +1023,16 @@ export function DashboardIsland() {
               className="h-8 w-fit max-w-[160px] shrink-0 object-contain sm:h-9 dark:rounded-md dark:bg-white dark:px-1.5 dark:py-0.5"
               src={data.site.logoUrl}
             />
-          ) : (
+          ) : data ? (
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground text-background">
               <Activity className="h-4 w-4" />
             </div>
+          ) : (
+            <div aria-hidden="true" className="h-9 w-[120px] animate-pulse rounded-md bg-muted/50" />
           )}
           <div className="min-w-0 border-l border-border pl-3">
             <h1 className="text-lg font-semibold leading-6 tracking-[-0.02em] text-foreground">
-              Status
+              {data ? getHeadingText(data.site) : "Status"}
             </h1>
             {data?.site?.description && (
               <p className="line-clamp-2 max-w-[60ch] text-xs text-muted-foreground">
@@ -914,15 +1042,29 @@ export function DashboardIsland() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
-          <span className="hidden sm:inline">
-            最近更新 <strong className="font-medium tabular-nums text-foreground">{formatTime(data?.lastUpdated)}</strong>
+        <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground sm:w-auto">
+          <span>
+            最近更新{" "}
+            <strong
+              title={data?.lastUpdated ? formatTime(data.lastUpdated) : undefined}
+              className="font-medium tabular-nums text-foreground"
+            >
+              {data ? (
+                <>
+                  <span className="sm:hidden">{formatClock(data.lastUpdated)}</span>
+                  <span className="hidden sm:inline">{formatTime(data.lastUpdated)}</span>
+                </>
+              ) : (
+                "加载中…"
+              )}
+            </strong>
           </span>
           {countdown && (
             <span>
               下次检查 <strong className="font-medium tabular-nums text-foreground">{countdown}</strong>
             </span>
           )}
+          <span aria-hidden="true" className="flex-1 sm:hidden" />
           {data?.site?.publicOrigin && (
             <a
               className="inline-flex items-center gap-1 font-medium text-foreground transition hover:opacity-70"
@@ -953,15 +1095,17 @@ export function DashboardIsland() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜索模型、类型或渠道"
-              className="h-8 w-full rounded-full border border-border bg-background/75 pl-8 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-foreground/40"
+              className="h-8 w-full rounded-full border border-border bg-background/75 pl-8 pr-3 text-sm transition placeholder:text-muted-foreground focus:border-foreground/40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
             />
           </label>
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex-none">
-            <ProviderFamilySwitch
-              families={providerFamilies}
-              activeFamily={activeProviderFamily}
-              setProviderFamily={setProviderFamily}
-            />
+            {showProviderFilter && (
+              <ProviderFamilySwitch
+                families={providerFamilies}
+                activeFamily={activeProviderFamily}
+                setProviderFamily={setProviderFamily}
+              />
+            )}
             <PeriodSwitch period={period} setPeriod={setPeriod} />
             <ViewModeSwitch view={view} setView={setView} />
             <button
@@ -1000,6 +1144,7 @@ export function DashboardIsland() {
         </div>
       ) : (
         <div className="space-y-4">
+          <HistoryLegend className="justify-end px-1" />
           {channels.map((channel) => (
             <ChannelSection
               key={channel.id}
@@ -1007,6 +1152,7 @@ export function DashboardIsland() {
               period={period}
               view={view}
               collapsed={collapsedChannels.has(channel.id)}
+              showHealthMeter={allVisibleChannels.length > 1}
               onToggleCollapsed={() => toggleChannelCollapsed(channel.id)}
             />
           ))}

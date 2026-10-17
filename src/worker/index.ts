@@ -1,5 +1,6 @@
 import { createWorkerApp } from "./app";
 import { runHealthCheckJob } from "./jobs";
+import { renderDashboardPage } from "./pages/index-html";
 
 const app = createWorkerApp();
 
@@ -29,6 +30,13 @@ function adminShellRequest(request: Request): Request {
   return new Request(url, request);
 }
 
+function isDashboardPagePath(pathname: string): boolean {
+  return pathname === "/" || pathname === "/index.html" || /^\/group\/[^/]+\/?$/.test(pathname);
+}
+
+// 页面上的 favicon 链接带配置地址的版本号，换图后链接随之变化，可以放心缓存
+const FAVICON_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
+
 async function configuredFaviconResponse(env: Env) {
   const row = await env.DB.prepare(
     "SELECT favicon_url FROM site_settings WHERE id = 'default'"
@@ -39,7 +47,10 @@ async function configuredFaviconResponse(env: Env) {
 
   const response = await fetch(row.favicon_url);
   const headers = new Headers(response.headers);
-  headers.set("Cache-Control", "no-store");
+  headers.set(
+    "Cache-Control",
+    response.ok ? FAVICON_CACHE_CONTROL : "no-store"
+  );
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -73,7 +84,10 @@ export default {
       return env.ASSETS.fetch(adminShellRequest(request));
     }
 
-    return env.ASSETS.fetch(request);
+    const assetResponse = await env.ASSETS.fetch(request);
+    return isDashboardPagePath(pathname)
+      ? renderDashboardPage(request, env, assetResponse)
+      : assetResponse;
   },
   scheduled(controller, env, ctx) {
     ctx.waitUntil(runHealthCheckJob(env, controller.scheduledTime));
