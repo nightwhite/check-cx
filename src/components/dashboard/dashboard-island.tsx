@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
-  AlertTriangle,
   Check,
   ChevronDown,
   ExternalLink,
@@ -17,105 +16,25 @@ import type {
   DashboardChannelModel,
   DashboardData,
   HealthStatus,
-  TimelineItem,
 } from "@/lib/types";
-import { ProviderIcon } from "@/components/provider-icon";
 import { cn } from "@/lib/utils";
 
+import {
+  FAILURE_STATUSES,
+  PERIODS,
+  STATUS_DOT_CLASS,
+  STATUS_LABEL,
+  STATUS_PILL_CLASS,
+  formatTime,
+  getEffectiveStatus,
+  getProviderFamily,
+} from "./dashboard-shared";
+import { ChannelModelRow } from "./model-cards";
 import { ThemeToggle } from "./theme-toggle";
 
-const PERIODS: Array<{ value: AvailabilityPeriod; label: string }> = [
-  { value: "7d", label: "7 天" },
-  { value: "15d", label: "15 天" },
-  { value: "30d", label: "30 天" },
-];
-const HISTORY_SEGMENT_COUNT = 60;
-const DEGRADED_THRESHOLD_MS = 30_000;
 const ALL_CHANNELS = "all";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "check-cx:collapsed-channels";
-const FAILURE_STATUSES = new Set<string>(["failed", "error", "validation_failed"]);
 
-const STATUS_LABEL: Record<string, string> = {
-  operational: "正常",
-  degraded: "延迟",
-  failed: "异常",
-  validation_failed: "验证失败",
-  maintenance: "维护中",
-  error: "错误",
-};
-
-const STATUS_DOT_CLASS: Record<string, string> = {
-  operational: "bg-emerald-500",
-  degraded: "bg-amber-500",
-  failed: "bg-rose-500",
-  validation_failed: "bg-orange-500",
-  maintenance: "bg-sky-500",
-  error: "bg-red-600",
-};
-
-const STATUS_PILL_CLASS: Record<string, string> = {
-  operational: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  degraded: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  failed: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-  validation_failed: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300",
-  maintenance: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  error: "border-red-600/30 bg-red-600/10 text-red-700 dark:text-red-300",
-};
-
-const PROVIDER_LABEL: Record<string, string> = {
-  openai: "OpenAI",
-  gemini: "Gemini",
-  anthropic: "Claude",
-};
-
-function getProviderFamily(type: string) {
-  return PROVIDER_LABEL[type] ?? type;
-}
-
-function getProviderDisplayName(name: string) {
-  return name.replace(/^SU8\s+/i, "");
-}
-
-const latencyNumberFormatter = new Intl.NumberFormat("en-US");
-
-function formatLatency(value: number | null | undefined) {
-  return typeof value === "number"
-    ? `${latencyNumberFormatter.format(Math.round(value))} ms`
-    : "—";
-}
-
-const chinaTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: "Asia/Shanghai",
-  year: "numeric",
-  month: "numeric",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-});
-
-const chinaClockFormatter = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: "Asia/Shanghai",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-});
-
-function formatTime(value: string | null | undefined) {
-  if (!value) {
-    return "暂无数据";
-  }
-  return chinaTimeFormatter.format(new Date(value));
-}
-
-function formatClock(value: string | null | undefined) {
-  if (!value) {
-    return "—";
-  }
-  return chinaClockFormatter.format(new Date(value));
-}
 
 function formatCountdown(ms: number | null) {
   if (typeof ms !== "number") {
@@ -283,22 +202,6 @@ function getOverallChannelStatus(channels: DashboardChannel[]): HealthStatus | "
   return "operational";
 }
 
-function isSlowLatency(model: DashboardChannelModel) {
-  return (
-    typeof model.latencyMs === "number" && model.latencyMs > DEGRADED_THRESHOLD_MS
-  );
-}
-
-// 正常/延迟以最新延迟为准，与状态胶囊配色保持一致
-function getEffectiveStatus(model: DashboardChannelModel): HealthStatus {
-  if (
-    (model.status === "operational" || model.status === "degraded") &&
-    typeof model.latencyMs === "number"
-  ) {
-    return isSlowLatency(model) ? "degraded" : "operational";
-  }
-  return model.status;
-}
 
 function summarizeChannel(channel: DashboardChannel) {
   const summary = { total: channel.models.length, operational: 0, degraded: 0, failed: 0 };
@@ -328,41 +231,6 @@ function formatChannelSummary(channel: DashboardChannel) {
   return parts.join(" · ");
 }
 
-function getAvailabilityColor(pct: number | null | undefined) {
-  if (pct === null || pct === undefined) {
-    return "text-muted-foreground";
-  }
-  if (pct >= 99) {
-    return "text-emerald-600 dark:text-emerald-300";
-  }
-  if (pct >= 95) {
-    return "text-lime-600 dark:text-lime-300";
-  }
-  if (pct >= 90) {
-    return "text-amber-600 dark:text-amber-300";
-  }
-  return "text-rose-600 dark:text-rose-300";
-}
-
-function getModelStatusClasses(model: DashboardChannelModel) {
-  if (
-    (model.status === "operational" || model.status === "degraded") &&
-    typeof model.latencyMs === "number"
-  ) {
-    const isSlow = isSlowLatency(model);
-    return {
-      pill: isSlow
-        ? STATUS_PILL_CLASS.degraded
-        : STATUS_PILL_CLASS.operational,
-      dot: isSlow ? STATUS_DOT_CLASS.degraded : STATUS_DOT_CLASS.operational,
-    };
-  }
-
-  return {
-    pill: STATUS_PILL_CLASS[model.status] ?? "border-border bg-muted text-muted-foreground",
-    dot: STATUS_DOT_CLASS[model.status] ?? "bg-muted-foreground",
-  };
-}
 
 function CornerPlus({ className }: { className?: string }) {
   return (
@@ -524,168 +392,8 @@ function ProviderFamilySwitch({
   );
 }
 
-function StatusHistory({ items }: { items: TimelineItem[] }) {
-  const segments = Array.from(
-    { length: HISTORY_SEGMENT_COUNT },
-    (_, index) => items[index] ?? null
-  );
 
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <span>最近 {Math.min(items.length, HISTORY_SEGMENT_COUNT)} 次检查</span>
-        <span>最新</span>
-      </div>
-      <div className="flex h-9 flex-row-reverse gap-[2px] rounded-md bg-muted/25 p-[3px]">
-        {segments.map((segment, index) => (
-          <span
-            key={segment ? `${segment.id}-${segment.checkedAt}` : `empty-${index}`}
-            aria-label={
-              segment
-                ? `${formatTime(segment.checkedAt)} ${STATUS_LABEL[segment.status] ?? segment.status}`
-                : "暂无数据"
-            }
-            title={
-              segment
-                ? `${formatTime(segment.checkedAt)} · ${STATUS_LABEL[segment.status] ?? segment.status} · ${formatLatency(segment.latencyMs)}`
-                : "暂无数据"
-            }
-            className={cn(
-              "min-w-0 flex-1 rounded-[2px]",
-              segment
-                ? STATUS_DOT_CLASS[segment.status] ?? "bg-muted-foreground"
-                : "bg-muted/50"
-            )}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
 
-function historyToTimelineItems(
-  model: DashboardChannelModel
-): TimelineItem[] {
-  return model.history.map((item) => ({
-    id: model.id,
-    name: model.name,
-    type: model.type,
-    model: model.model,
-    status: item.status,
-    latencyMs: item.latencyMs,
-    pingLatencyMs: null,
-    checkedAt: item.checkedAt,
-    message: "",
-  }));
-}
-
-function getPeriodLabel(period: AvailabilityPeriod) {
-  return PERIODS.find((item) => item.value === period)?.label ?? period;
-}
-
-function ChannelModelRow({
-  model,
-  period,
-}: {
-  model: DashboardChannelModel;
-  period: AvailabilityPeriod;
-}) {
-  const statusClasses = getModelStatusClasses(model);
-  const availabilityPct = model.availability[period] ?? null;
-  const availabilityLabel =
-    availabilityPct === null ? "—" : `${availabilityPct.toFixed(2)}%`;
-  const officialStatusMessage = model.officialStatus?.message;
-  const shouldShowOfficialStatus =
-    model.status !== "operational" && Boolean(officialStatusMessage);
-  const hasLatency = typeof model.latencyMs === "number";
-
-  return (
-    <article className="group rounded-2xl border border-border/45 bg-background/65 p-4 shadow-sm transition hover:border-foreground/20 hover:shadow-lg hover:shadow-foreground/5">
-      {shouldShowOfficialStatus && (
-        <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>官方状态：{officialStatusMessage}</span>
-        </div>
-      )}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,1.6fr)] lg:items-center lg:gap-6">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              aria-label={`${PROVIDER_LABEL[model.type] ?? model.type} provider`}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-muted/55 shadow-sm ring-1 ring-border/65"
-            >
-              <ProviderIcon type={model.type} size={26} className="text-foreground/80" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="truncate text-xl font-extrabold leading-tight">
-                {getProviderDisplayName(model.name)}
-              </h2>
-              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span className="rounded-md bg-muted px-2 py-0.5 font-semibold text-foreground/70">
-                  {PROVIDER_LABEL[model.type] ?? model.type}
-                </span>
-                <span className="truncate font-medium">{model.model}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-col items-start gap-1.5 sm:items-end">
-            <span
-              className={cn(
-                "inline-flex w-fit items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold",
-                statusClasses.pill
-              )}
-            >
-              <span className={cn("h-2 w-2 rounded-full", statusClasses.dot)} />
-              {STATUS_LABEL[model.status] ?? model.status}
-            </span>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span
-                data-testid="model-latency"
-                className={cn(
-                  "font-mono font-bold tabular-nums",
-                  hasLatency
-                    ? isSlowLatency(model)
-                      ? "text-amber-600 dark:text-amber-300"
-                      : "text-foreground"
-                    : "text-muted-foreground"
-                )}
-              >
-                {formatLatency(model.latencyMs)}
-              </span>
-              <span aria-hidden="true">·</span>
-              <time
-                dateTime={model.checkedAt}
-                title={`最近检查 ${formatTime(model.checkedAt)}`}
-                className="tabular-nums"
-              >
-                {formatClock(model.checkedAt)}
-              </time>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="text-xs text-muted-foreground">
-              近 {getPeriodLabel(period)}可用性
-            </div>
-            <div className={cn("text-lg font-black", getAvailabilityColor(availabilityPct))}>
-              {availabilityLabel}
-            </div>
-          </div>
-          <StatusHistory items={historyToTimelineItems(model)} />
-        </div>
-      </div>
-
-      {model.message && model.message !== "OK" && (
-        <div className="mt-3 rounded-xl bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
-          {model.message}
-        </div>
-      )}
-    </article>
-  );
-}
 
 function ChannelLogo({ channel }: { channel: DashboardChannel }) {
   const [failed, setFailed] = useState(false);
