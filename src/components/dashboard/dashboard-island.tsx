@@ -747,7 +747,7 @@ function LoadingState() {
   return (
     <div className="space-y-3">
       <div className="h-16 animate-pulse rounded-xl border border-border/50 bg-muted/40" />
-      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-2.5">
         {Array.from({ length: 8 }).map((_, index) => (
           <div
             key={index}
@@ -935,7 +935,7 @@ export function DashboardIsland() {
 
   return (
     <section
-      className="relative mx-auto flex w-full max-w-[1600px] flex-col gap-4"
+      className="relative mx-auto flex w-full max-w-[2200px] flex-col gap-4"
       data-dashboard-ready={!isLoading && !errorMessage ? "true" : "false"}
     >
       <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-1">

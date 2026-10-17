@@ -349,7 +349,7 @@ export function ModelCollection({
   }
 
   return (
-    <div className="grid gap-2.5 p-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-2.5 p-2.5">
       {models.map((model) => (
         <ModelTile key={model.id} model={model} period={period} />
       ))}
