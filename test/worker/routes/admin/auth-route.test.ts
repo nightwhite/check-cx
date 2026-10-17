@@ -283,6 +283,19 @@ describe("admin auth routes", () => {
       turnstileSiteKey: null,
     });
 
+    const blank = await app.request(
+      "http://example.com/api/admin/session",
+      {},
+      await createEnv("secret-admin-token", {
+        TURNSTILE_SITE_KEY: "",
+        TURNSTILE_SECRET_KEY: "  ",
+      })
+    );
+    await expect(blank.json()).resolves.toEqual({
+      authenticated: false,
+      turnstileSiteKey: null,
+    });
+
     const enabled = await app.request(
       "http://example.com/api/admin/session",
       {},

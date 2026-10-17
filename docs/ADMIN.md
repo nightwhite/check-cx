@@ -53,6 +53,30 @@ wrangler secret put CONFIG_ENCRYPTION_KEY
 
 `ADMIN_PATH` 不是 secret，可以写在 `wrangler.jsonc` 的 `vars` 中。
 
+## 登录防爆破与人机验证
+
+登录接口内置防爆破，无需配置：
+
+- 同一 IP（`CF-Connecting-IP`）15 分钟内失败 5 次锁定 15 分钟，重复锁定时长翻倍，最长 24 小时；24 小时无尝试后重置。
+- 全站 60 秒内失败达到 30 次时，所有登录暂停 60 秒。
+- 锁定期间返回 `429` 与 `Retry-After`，登录页显示倒计时。
+
+Cloudflare Turnstile 人机验证通过环境变量开启，**未配置时默认不开启**：
+
+| 变量 | 说明 | 注入方式 |
+| --- | --- | --- |
+| `TURNSTILE_SITE_KEY` | 公开的 Site Key，前端渲染验证组件使用 | `wrangler.jsonc` 的 `vars` 或 `wrangler secret put` |
+| `TURNSTILE_SECRET_KEY` | 服务端校验使用，不能泄露 | `wrangler secret put TURNSTILE_SECRET_KEY` |
+
+两个变量都配置时才启用；只配置其中一个等同于未配置。获取方式：Cloudflare 控制台 → Turnstile → Add widget，填写管理台所在域名，模式选 Managed。
+
+```bash
+wrangler secret put TURNSTILE_SITE_KEY
+wrangler secret put TURNSTILE_SECRET_KEY
+```
+
+关闭人机验证只需删除这两个变量（`wrangler secret delete TURNSTILE_SECRET_KEY`）。
+
 ## 登录与 Session
 
 访问 `ADMIN_PATH` 后输入 `ADMIN_TOKEN` 登录。登录成功后，Worker 会设置 `HttpOnly` session cookie：
