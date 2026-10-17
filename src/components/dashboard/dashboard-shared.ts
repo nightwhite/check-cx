@@ -154,3 +154,6 @@ export function getModelStatusClasses(model: DashboardChannelModel) {
 export function getPeriodLabel(period: AvailabilityPeriod) {
   return PERIODS.find((item) => item.value === period)?.label ?? period;
 }
+export function isIssueStatus(status: string) {
+  return FAILURE_STATUSES.has(status);
+}

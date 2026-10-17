@@ -515,9 +515,9 @@ describe("DashboardIsland", () => {
   });
 
   it.each([
-    ["keeps the status green at 30 seconds", 30_000, "border-emerald-500/30"],
-    ["turns the status yellow above 30 seconds", 30_001, "border-amber-500/30"],
-  ])("%s", async (_label, latencyMs, colorClass) => {
+    ["keeps the status green at 30 seconds", 30_000, "border-emerald-500/30", "正常"],
+    ["turns the status yellow above 30 seconds", 30_001, "border-amber-500/30", "延迟"],
+  ])("%s", async (_label, latencyMs, colorClass, statusLabel) => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => jsonResponse(withFirstModelLatency(baseData, latencyMs)))
@@ -531,9 +531,9 @@ describe("DashboardIsland", () => {
 
     expect(screen.queryByText("首字")).toBeNull();
     expect(screen.queryByText(`${latencyMs} ms`)).toBeNull();
-    expect(screen.getAllByText("正常")[1].closest("span")?.className).toContain(
-      colorClass
-    );
+    const badge = screen.getByTestId("model-status");
+    expect(badge.className).toContain(colorClass);
+    expect(badge.textContent).toBe(statusLabel);
   });
 
   it("uses a designed dropdown for provider filtering", async () => {
@@ -751,5 +751,93 @@ describe("DashboardIsland", () => {
     expect(window.localStorage.getItem("theme")).toBe("system");
     window.localStorage.clear();
     document.documentElement.classList.remove("dark");
+  });
+
+  it("switches between grid and list views and remembers the choice", async () => {
+    window.localStorage.clear();
+    window.history.replaceState({}, "", "/");
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(baseData)));
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const grid = screen.getByRole("button", { name: "卡片视图" });
+    const list = screen.getByRole("button", { name: "列表视图" });
+    expect(grid.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(list);
+    expect(list.getAttribute("aria-pressed")).toBe("true");
+    expect(window.localStorage.getItem("check-cx:view-mode")).toBe("list");
+    expect(screen.getByRole("heading", { name: "gpt-5.5" })).not.toBeNull();
+    window.localStorage.clear();
+  });
+
+  it("opens the list view from the URL", async () => {
+    window.history.replaceState({}, "", "/?view=list");
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(baseData)));
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByRole("button", { name: "列表视图" }).getAttribute("aria-pressed")
+    ).toBe("true");
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("summarizes all models and filters to issues only", async () => {
+    window.history.replaceState({}, "", "/");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(withClaudeChannel(baseData)))
+    );
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const toggle = screen.getByRole("button", { name: "只看异常 1" });
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "显示全部" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("heading", { name: "gpt-5.5" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Claude" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "显示全部" }));
+    expect(screen.getByRole("heading", { name: "Claude" })).not.toBeNull();
+  });
+
+  it("lists failing models before healthy ones within a channel", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          ...baseData,
+          channels: [
+            {
+              ...baseData.channels[0],
+              models: [
+                { ...baseData.channels[0].models[0], id: "a", name: "A healthy", status: "operational" },
+                { ...baseData.channels[0].models[0], id: "z", name: "Z broken", status: "failed" },
+              ],
+            },
+          ],
+        })
+      )
+    );
+
+    render(<DashboardIsland />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const names = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent);
+    expect(names).toEqual(["Z broken", "A healthy"]);
   });
 });
