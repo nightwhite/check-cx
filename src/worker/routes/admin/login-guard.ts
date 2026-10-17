@@ -179,3 +179,14 @@ export function createLoginGuard(
     },
   };
 }
+
+// 24 小时无更新的记录：锁定已过期且 lock_count 会被重置，可以安全删除。
+export async function pruneLoginAttempts(
+  db: LoginGuardExecutor,
+  nowMs: number
+): Promise<void> {
+  await db
+    .prepare("DELETE FROM admin_login_attempts WHERE updated_at_ms < ?")
+    .bind(nowMs - LOCK_COUNT_RESET_MS)
+    .run();
+}

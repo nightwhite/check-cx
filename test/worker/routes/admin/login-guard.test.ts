@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createLoginGuard,
   getClientIp,
+  pruneLoginAttempts,
 } from "../../../../src/worker/routes/admin/login-guard";
 import { createAdminRouteEnv } from "./admin-route-test-helpers";
 
@@ -110,5 +111,24 @@ describe("admin login guard", () => {
     await expect(guard.checkLocked("192.0.2.1")).resolves.toEqual({
       locked: false,
     });
+  });
+});
+
+describe("pruneLoginAttempts", () => {
+  it("removes records untouched for more than 24 hours", async () => {
+    const env = await createAdminRouteEnv();
+    const start = Date.parse("2026-10-17T00:00:00.000Z");
+    let nowMs = start;
+    const guard = createLoginGuard(env.DB, () => nowMs);
+    await guard.recordFailure("1.1.1.1");
+    nowMs = start + 23 * HOUR_MS;
+    await guard.recordFailure("2.2.2.2");
+
+    await pruneLoginAttempts(env.DB, start + 24 * HOUR_MS + 1);
+
+    const rows = await env.DB.prepare(
+      "SELECT key FROM admin_login_attempts ORDER BY key"
+    ).all<{ key: string }>();
+    expect(rows.results?.map((row) => row.key)).toEqual(["global", "ip:2.2.2.2"]);
   });
 });
