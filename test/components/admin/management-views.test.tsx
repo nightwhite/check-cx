@@ -259,7 +259,7 @@ describe("admin management views", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders config key status without exposing key material or batch controls", async () => {
+  it("renders config key status without exposing key material", async () => {
     setupFetch();
 
     renderShell("configs");
@@ -273,7 +273,13 @@ describe("admin management views", () => {
     expect(screen.getByText("继承 · relay.example.com")).not.toBeNull();
     expect(screen.getAllByText("未配置").length).toBeGreaterThan(0);
     expect(screen.queryByText(/sk-live-secret/)).toBeNull();
-    expect(screen.queryByText(/批量/)).toBeNull();
+    // 批量操作栏只在勾选后出现
+    expect(screen.queryByRole("toolbar", { name: "批量操作" })).toBeNull();
+    fireEvent.click(screen.getByLabelText("选择 OpenAI Official / OpenAI primary"));
+    expect(screen.getByRole("toolbar", { name: "批量操作" })).not.toBeNull();
+    expect(screen.getByText("已选 1 项")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
+    expect(screen.queryByRole("toolbar", { name: "批量操作" })).toBeNull();
   });
 
   it("opens secret replacement with an empty key field", async () => {
@@ -368,7 +374,7 @@ describe("admin management views", () => {
           models: [
             { id: "claude-opus-5-5", type: "anthropic", ownedBy: null, modelExists: false, monitored: false },
             { id: "gpt-4o", type: "openai", ownedBy: null, modelExists: true, monitored: true },
-            { id: "gpt-6", type: "openai", ownedBy: null, modelExists: false, monitored: false },
+            { id: "gpt-6", type: "openai", ownedBy: null, modelExists: true, monitored: false, otherChannels: ["Codex"] },
           ],
         });
       }
@@ -408,7 +414,11 @@ describe("admin management views", () => {
     expect(
       (screen.getByLabelText("选择 gpt-4o") as HTMLInputElement).disabled
     ).toBe(true);
-    expect(screen.getByText("已监控")).not.toBeNull();
+    expect(screen.getByText("本渠道已监控")).not.toBeNull();
+    expect(screen.getByText("已在 Codex 监控")).not.toBeNull();
+    expect(
+      (screen.getByLabelText("选择 gpt-6") as HTMLInputElement).disabled
+    ).toBe(false);
 
     fireEvent.change(screen.getByLabelText("筛选上游模型"), {
       target: { value: "gpt" },

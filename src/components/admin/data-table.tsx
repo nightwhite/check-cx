@@ -24,6 +24,12 @@ interface DataTableProps<T> {
   emptyActionLabel: string;
   getRowKey(record: T): string;
   onCreate(): void;
+  /** 传入后在首列显示勾选框，用于批量操作 */
+  selection?: {
+    selected: Set<string>;
+    onChange(next: Set<string>): void;
+    getLabel(record: T): string;
+  };
 }
 
 export function DataTable<T>({
@@ -33,6 +39,7 @@ export function DataTable<T>({
   emptyActionLabel,
   getRowKey,
   onCreate,
+  selection,
 }: DataTableProps<T>) {
   if (records.length === 0) {
     return (
@@ -47,11 +54,60 @@ export function DataTable<T>({
     );
   }
 
+  const visibleKeys = records.map(getRowKey);
+  const selectedVisible = selection
+    ? visibleKeys.filter((key) => selection.selected.has(key)).length
+    : 0;
+  const allSelected = selectedVisible > 0 && selectedVisible === visibleKeys.length;
+
+  function toggleAll() {
+    if (!selection) {
+      return;
+    }
+    const next = new Set(selection.selected);
+    for (const key of visibleKeys) {
+      if (allSelected) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+    }
+    selection.onChange(next);
+  }
+
+  function toggleRow(key: string) {
+    if (!selection) {
+      return;
+    }
+    const next = new Set(selection.selected);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    selection.onChange(next);
+  }
+
   return (
     <div className="rounded-lg border bg-card">
       <Table>
         <TableHeader>
           <TableRow>
+            {selection ? (
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  aria-label="全选当前列表"
+                  checked={allSelected}
+                  ref={(element) => {
+                    if (element) {
+                      element.indeterminate = selectedVisible > 0 && !allSelected;
+                    }
+                  }}
+                  onChange={toggleAll}
+                />
+              </TableHead>
+            ) : null}
             {columns.map((column) => (
               <TableHead key={column.key} className={column.className}>
                 {column.header}
@@ -61,7 +117,20 @@ export function DataTable<T>({
         </TableHeader>
         <TableBody>
           {records.map((record) => (
-            <TableRow key={getRowKey(record)}>
+            <TableRow
+              key={getRowKey(record)}
+              data-state={selection?.selected.has(getRowKey(record)) ? "selected" : undefined}
+            >
+              {selection ? (
+                <TableCell className="w-10">
+                  <input
+                    type="checkbox"
+                    aria-label={`选择 ${selection.getLabel(record)}`}
+                    checked={selection.selected.has(getRowKey(record))}
+                    onChange={() => toggleRow(getRowKey(record))}
+                  />
+                </TableCell>
+              ) : null}
               {columns.map((column) => (
                 <TableCell key={column.key} className={column.className}>
                   {column.cell(record)}

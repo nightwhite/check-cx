@@ -4,6 +4,7 @@ import {
   bool,
   changed,
   type AdminConfigRecord,
+  type BulkConfigPatch,
   type AdminD1Executor,
   type AdminKeySource,
   type AdminProviderType,
@@ -149,6 +150,27 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
         .run();
     },
 
+    /** 每个模型已被哪些渠道监控，用于导入弹窗提示「已在其他渠道监控」。 */
+    async listChannelNamesByModel() {
+      const rows = await db
+        .prepare(
+          `SELECT c.model_id, c.channel_id, ch.name AS channel_name
+           FROM check_configs c
+           JOIN channels ch ON ch.id = c.channel_id
+           ORDER BY ch.sort_order ASC, ch.name ASC`
+        )
+        .all<{ model_id: string; channel_id: string; channel_name: string }>();
+      const result = new Map<string, Array<{ id: string; name: string }>>();
+      for (const row of rows.results ?? []) {
+        const list = result.get(row.model_id) ?? [];
+        if (!list.some((item) => item.id === row.channel_id)) {
+          list.push({ id: row.channel_id, name: row.channel_name });
+        }
+        result.set(row.model_id, list);
+      }
+      return result;
+    },
+
     async existsForChannelModel(channelId: string, modelId: string) {
       const row = await db
         .prepare(
@@ -286,6 +308,118 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
         .bind(id)
         .run();
       return changed(result);
+    },
+
+    /** 批量修改：只更新 patch 中出现的字段。 */
+    async bulkUpdate(ids: string[], patch: BulkConfigPatch, nowMs: number) {
+      const assignments: string[] = [];
+      const values: unknown[] = [];
+      if (patch.enabled !== undefined) {
+        assignments.push("enabled = ?");
+        values.push(patch.enabled ? 1 : 0);
+      }
+      if (patch.isMaintenance !== undefined) {
+        assignments.push("is_maintenance = ?");
+        values.push(patch.isMaintenance ? 1 : 0);
+      }
+      if (patch.channelId !== undefined) {
+        assignments.push("channel_id = ?");
+        values.push(patch.channelId);
+      }
+      if (patch.apiFormat !== undefined) {
+        assignments.push("api_format = ?");
+        values.push(patch.apiFormat);
+      }
+      if (patch.checkIntervalSeconds !== undefined) {
+        assignments.push("check_interval_seconds = ?");
+        values.push(patch.checkIntervalSeconds);
+      }
+      if (assignments.length === 0 || ids.length === 0) {
+        return 0;
+      }
+      const result = await db
+        .prepare(
+          `UPDATE check_configs
+           SET ${assignments.join(", ")}, updated_at_ms = ?
+           WHERE id IN (${ids.map(() => "?").join(", ")})`
+        )
+        .bind(...values, nowMs, ...ids)
+        .run();
+      return result.meta?.changes ?? 0;
+    },
+
+    async bulkDelete(ids: string[]) {
+      if (ids.length === 0) {
+        return 0;
+      }
+      const result = await db
+        .prepare(
+          `DELETE FROM check_configs WHERE id IN (${ids.map(() => "?").join(", ")})`
+        )
+        .bind(...ids)
+        .run();
+      return result.meta?.changes ?? 0;
+    },
+
+    /**
+     * 复制到另一个渠道：沿用模型、类型、API 格式、频次与维护状态；
+     * 端点与 Key 不复制，改为继承目标渠道，已在目标渠道监控的模型跳过。
+     */
+    async copyToChannel(ids: string[], channelId: string, nowMs: number) {
+      if (ids.length === 0) {
+        return { created: 0, skipped: 0 };
+      }
+      const rows = await db
+        .prepare(
+          `SELECT id, name, type, model_id, api_format, enabled, is_maintenance,
+                  check_interval_seconds, region
+           FROM check_configs
+           WHERE id IN (${ids.map(() => "?").join(", ")})`
+        )
+        .bind(...ids)
+        .all<{
+          id: string;
+          name: string;
+          type: AdminProviderType;
+          model_id: string;
+          api_format: AdminConfigRecord["apiFormat"];
+          enabled: number;
+          is_maintenance: number;
+          check_interval_seconds: number | null;
+          region: string | null;
+        }>();
+      let created = 0;
+      let skipped = 0;
+      const seenModels = new Set<string>();
+      for (const row of rows.results ?? []) {
+        if (
+          seenModels.has(row.model_id) ||
+          (await this.existsForChannelModel(channelId, row.model_id))
+        ) {
+          skipped += 1;
+          continue;
+        }
+        seenModels.add(row.model_id);
+        await this.create({
+          id: crypto.randomUUID(),
+          name: row.name,
+          type: row.type,
+          modelId: row.model_id,
+          channelId,
+          endpoint: "",
+          hostHeader: null,
+          apiFormat: row.api_format ?? "chat_completions",
+          encryptedKey: null,
+          enabled: bool(row.enabled),
+          isMaintenance: bool(row.is_maintenance),
+          groupName: null,
+          checkIntervalSeconds: row.check_interval_seconds,
+          region: row.region,
+          nowMs,
+        });
+        created += 1;
+      }
+      return { created, skipped };
     },
   };
 }

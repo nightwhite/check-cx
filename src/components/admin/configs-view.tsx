@@ -2,7 +2,11 @@ import * as React from "react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
+import { Select } from "../../../components/ui/select";
 import {
+  bulkCopyAdminConfigs,
+  bulkDeleteAdminConfigs,
+  bulkUpdateAdminConfigs,
   createAdminConfig,
   deleteAdminConfig,
   inheritAdminConfigSecret,
@@ -11,12 +15,18 @@ import {
   listAdminModels,
   replaceAdminConfigSecret,
   updateAdminConfig,
+  type AdminBulkConfigPatch,
 } from "./admin-api";
 import type {
   AdminConfigRecord,
   AdminChannelRecord,
   AdminModelRecord,
 } from "./admin-types";
+import {
+  BulkActionBar,
+  BulkCopyConfigsDialog,
+  BulkEditConfigsDialog,
+} from "./bulk-actions";
 import { ConfigForm, ConfigSecretDialog } from "./config-form";
 import { DataTable } from "./data-table";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
@@ -63,7 +73,16 @@ export function ConfigsView() {
   const [catalogError, setCatalogError] = React.useState<string | null>(null);
   const [secretError, setSecretError] = React.useState<string | null>(null);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
-  const { records, setRecords, loading, error } = useAdminResource({
+  const [channelFilter, setChannelFilter] = React.useState("all");
+  const [stateFilter, setStateFilter] = React.useState("all");
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [bulkDialog, setBulkDialog] = React.useState<
+    "edit" | "copy" | "delete" | null
+  >(null);
+  const [bulkPending, setBulkPending] = React.useState(false);
+  const [bulkError, setBulkError] = React.useState<string | null>(null);
+  const [bulkNotice, setBulkNotice] = React.useState<string | null>(null);
+  const { records, setRecords, loading, error, reload } = useAdminResource({
     load: listAdminConfigs,
   });
 
@@ -77,12 +96,54 @@ export function ConfigsView() {
       .catch((loadError) => setCatalogError(errorMessage(loadError)));
   }, []);
 
-  const filtered = records.filter((record) =>
-    includesText(
-      [record.name, record.type, record.model, record.channelName, record.region],
-      search
-    )
+  const filtered = records.filter(
+    (record) =>
+      includesText(
+        [record.name, record.type, record.model, record.channelName, record.region],
+        search
+      ) &&
+      (channelFilter === "all" ||
+        (channelFilter === "none"
+          ? !record.channelId
+          : record.channelId === channelFilter)) &&
+      (stateFilter === "all" ||
+        (stateFilter === "enabled" && record.enabled) ||
+        (stateFilter === "disabled" && !record.enabled) ||
+        (stateFilter === "maintenance" && record.isMaintenance))
   );
+  // 被删除或刷新后不存在的记录不再计入选择
+  const selectedIds = records
+    .filter((record) => selected.has(record.id))
+    .map((record) => record.id);
+
+  async function runBulk(
+    action: () => Promise<string>,
+    { closeDialog = true }: { closeDialog?: boolean } = {}
+  ) {
+    setBulkPending(true);
+    setBulkError(null);
+    setBulkNotice(null);
+    try {
+      const notice = await action();
+      await reload();
+      setSelected(new Set());
+      setBulkNotice(notice);
+      if (closeDialog) {
+        setBulkDialog(null);
+      }
+    } catch (actionError) {
+      setBulkError(errorMessage(actionError));
+    } finally {
+      setBulkPending(false);
+    }
+  }
+
+  function bulkToggle(patch: AdminBulkConfigPatch, label: string) {
+    return runBulk(async () => {
+      const { updated } = await bulkUpdateAdminConfigs(selectedIds, patch);
+      return `已${label} ${updated} 个监控项`;
+    });
+  }
 
   async function save(payload: Record<string, unknown>) {
     setSaving(true);
@@ -169,8 +230,8 @@ export function ConfigsView() {
 
   return (
     <AdminViewLayout
-      title="Provider 配置"
-      description="维护渠道、模型、端点和检查频次"
+      title="监控项"
+      description="维护渠道、模型、端点和检查频次，勾选后可批量操作"
       actionLabel="新增监控项"
       searchLabel="搜索监控项"
       searchValue={search}
@@ -181,6 +242,102 @@ export function ConfigsView() {
         setFormOpen(true);
       }}
     >
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          aria-label="按渠道筛选"
+          value={channelFilter}
+          className="h-9 w-auto min-w-[140px]"
+          onChange={(event) => setChannelFilter(event.target.value)}
+        >
+          <option value="all">全部渠道</option>
+          {channels.map((channel) => (
+            <option key={channel.id} value={channel.id}>
+              {channel.name}
+            </option>
+          ))}
+          <option value="none">未关联渠道</option>
+        </Select>
+        <Select
+          aria-label="按状态筛选"
+          value={stateFilter}
+          className="h-9 w-auto min-w-[120px]"
+          onChange={(event) => setStateFilter(event.target.value)}
+        >
+          <option value="all">全部状态</option>
+          <option value="enabled">已启用</option>
+          <option value="disabled">已停用</option>
+          <option value="maintenance">维护中</option>
+        </Select>
+        <span className="text-xs text-muted-foreground">
+          共 {filtered.length} 项
+        </span>
+      </div>
+      <BulkActionBar
+        count={selectedIds.length}
+        pending={bulkPending}
+        onClear={() => setSelected(new Set())}
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => bulkToggle({ enabled: true }, "启用")}
+        >
+          启用
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => bulkToggle({ enabled: false }, "停用")}
+        >
+          停用
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setBulkError(null);
+            setBulkDialog("edit");
+          }}
+        >
+          批量修改
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setBulkError(null);
+            setBulkDialog("copy");
+          }}
+        >
+          复制到渠道
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-destructive"
+          onClick={() => {
+            setBulkError(null);
+            setBulkDialog("delete");
+          }}
+        >
+          删除
+        </Button>
+      </BulkActionBar>
+      {bulkNotice ? (
+        <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">
+          {bulkNotice}
+        </p>
+      ) : null}
+      {bulkError && !bulkDialog ? (
+        <p role="alert" className="text-sm text-destructive">
+          {bulkError}
+        </p>
+      ) : null}
       {loading ? <p className="text-sm text-muted-foreground">正在加载配置</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {catalogError ? (
@@ -190,6 +347,12 @@ export function ConfigsView() {
         <DataTable
           records={filtered}
           getRowKey={(record) => record.id}
+          selection={{
+            selected,
+            onChange: setSelected,
+            getLabel: (record) =>
+              `${record.channelName ?? "未关联渠道"} / ${record.name}`,
+          }}
           emptyTitle="还没有监控项"
           emptyActionLabel="新增监控项"
           onCreate={() => {
@@ -332,6 +495,51 @@ export function ConfigsView() {
         }}
         onSubmit={replaceSecret}
         onInherit={inheritSecret}
+      />
+      <BulkEditConfigsDialog
+        open={bulkDialog === "edit"}
+        count={selectedIds.length}
+        channels={channels}
+        saving={bulkPending}
+        serverError={bulkDialog === "edit" ? bulkError : null}
+        onOpenChange={(open) => setBulkDialog(open ? "edit" : null)}
+        onSubmit={(patch) =>
+          runBulk(async () => {
+            const { updated } = await bulkUpdateAdminConfigs(selectedIds, patch);
+            return `已修改 ${updated} 个监控项`;
+          })
+        }
+      />
+      <BulkCopyConfigsDialog
+        open={bulkDialog === "copy"}
+        count={selectedIds.length}
+        channels={channels}
+        saving={bulkPending}
+        serverError={bulkDialog === "copy" ? bulkError : null}
+        onOpenChange={(open) => setBulkDialog(open ? "copy" : null)}
+        onSubmit={(channelId) =>
+          runBulk(async () => {
+            const { created, skipped } = await bulkCopyAdminConfigs(
+              selectedIds,
+              channelId
+            );
+            return `已复制 ${created} 个监控项${skipped > 0 ? `，${skipped} 个已存在跳过` : ""}`;
+          })
+        }
+      />
+      <DeleteConfirmDialog
+        open={bulkDialog === "delete"}
+        title={`删除 ${selectedIds.length} 个监控项`}
+        description="监控项及其检测历史会一并删除，无法恢复"
+        pending={bulkPending}
+        error={bulkDialog === "delete" ? bulkError : null}
+        onOpenChange={(open) => setBulkDialog(open ? "delete" : null)}
+        onConfirm={() =>
+          runBulk(async () => {
+            const { deleted } = await bulkDeleteAdminConfigs(selectedIds);
+            return `已删除 ${deleted} 个监控项`;
+          })
+        }
       />
       <DeleteConfirmDialog
         open={Boolean(deleting)}

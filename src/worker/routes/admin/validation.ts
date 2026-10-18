@@ -192,3 +192,25 @@ export function isAdminRouteError(error: unknown): error is Error & { status: nu
     typeof (error as { status: unknown }).status === "number"
   );
 }
+
+export const MAX_BULK_IDS = 200;
+
+/** 批量操作的 id 列表：去重、去空，并限制单次数量以免超出 D1 绑定参数上限。 */
+export function bulkIds(body: Record<string, unknown>): string[] {
+  const raw = body.ids;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new AdminValidationError("请至少选择一项");
+  }
+  const ids = [
+    ...new Set(
+      raw.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    ),
+  ];
+  if (ids.length !== raw.length && ids.length === 0) {
+    throw new AdminValidationError("请至少选择一项");
+  }
+  if (ids.length > MAX_BULK_IDS) {
+    throw new AdminValidationError(`一次最多操作 ${MAX_BULK_IDS} 项`);
+  }
+  return ids;
+}

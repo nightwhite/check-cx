@@ -134,6 +134,7 @@ export function ImportModelsDialog({
                 selected: false,
                 modelExists: true,
                 monitored: row.monitored || (createConfigs && canCreateConfigs),
+                otherChannels: row.otherChannels,
               }
             : row
         )
@@ -231,11 +232,14 @@ export function ImportModelsDialog({
                       </span>
                       {row.monitored ? (
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          已监控
+                          本渠道已监控
                         </span>
-                      ) : row.modelExists ? (
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          模型已存在
+                      ) : row.otherChannels && row.otherChannels.length > 0 ? (
+                        <span
+                          className="max-w-[16ch] shrink-0 truncate text-xs text-muted-foreground"
+                          title={`已在 ${row.otherChannels.join("、")} 监控，可在本渠道再建一份`}
+                        >
+                          已在 {row.otherChannels.join("、")} 监控
                         </span>
                       ) : null}
                       <Select

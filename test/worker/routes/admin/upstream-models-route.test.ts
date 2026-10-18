@@ -62,8 +62,16 @@ describe("admin upstream model import", () => {
           ownedBy: null,
           modelExists: false,
           monitored: false,
+          otherChannels: [],
         },
-        { id: "gpt-6", type: "openai", ownedBy: null, modelExists: true, monitored: true },
+        {
+          id: "gpt-6",
+          type: "openai",
+          ownedBy: null,
+          modelExists: true,
+          monitored: true,
+          otherChannels: [],
+        },
       ],
     });
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
