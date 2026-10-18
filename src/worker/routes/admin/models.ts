@@ -5,6 +5,7 @@ import { nowMs, routeError } from "./helpers";
 import {
   AdminConflictError,
   AdminNotFoundError,
+  bulkIds,
   optionalString,
   providerType,
   readJsonObject,
@@ -39,6 +40,19 @@ async function validateTemplateType(
 
 export const adminModelRoutes = new Hono<{ Bindings: Env }>()
   .get("/", async (c) => c.json(await createAdminModelRepository(c.env.DB).list()))
+  // 仍被监控项引用的模型跳过并在结果里列出，其余照常删除
+  .post("/bulk/delete", async (c) => {
+    try {
+      const repository = createAdminModelRepository(c.env.DB);
+      const ids = bulkIds(await readJsonObject(c.req.raw));
+      const referenced = await repository.listReferencedIds(ids);
+      const deletable = ids.filter((id) => !referenced.has(id));
+      const deleted = await repository.bulkDelete(deletable);
+      return c.json({ deleted, skippedInUse: [...referenced] });
+    } catch (error) {
+      return routeError(c, error);
+    }
+  })
   .post("/", async (c) => {
     try {
       const repository = createAdminModelRepository(c.env.DB);

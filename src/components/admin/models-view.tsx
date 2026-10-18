@@ -3,6 +3,7 @@ import * as React from "react";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import {
+  bulkDeleteAdminModels,
   createAdminModel,
   deleteAdminModel,
   listAdminModels,
@@ -10,6 +11,7 @@ import {
   updateAdminModel,
 } from "./admin-api";
 import type { AdminModelRecord, AdminTemplateRecord } from "./admin-types";
+import { BulkActionBar } from "./bulk-actions";
 import { DataTable } from "./data-table";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { ModelForm } from "./model-form";
@@ -26,9 +28,46 @@ export function ModelsView() {
   const [formError, setFormError] = React.useState<string | null>(null);
   const [templateError, setTemplateError] = React.useState<string | null>(null);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
-  const { records, setRecords, loading, error } = useAdminResource({
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [bulkPending, setBulkPending] = React.useState(false);
+  const [bulkError, setBulkError] = React.useState<string | null>(null);
+  const [bulkNotice, setBulkNotice] = React.useState<string | null>(null);
+  const { records, setRecords, loading, error, reload } = useAdminResource({
     load: listAdminModels,
   });
+  const selectedIds = records
+    .filter((record) => selected.has(record.id))
+    .map((record) => record.id);
+
+  async function bulkRemove() {
+    setBulkPending(true);
+    setBulkError(null);
+    setBulkNotice(null);
+    try {
+      const { deleted, skippedInUse } = await bulkDeleteAdminModels(selectedIds);
+      const skippedNames = records
+        .filter((record) => skippedInUse.includes(record.id))
+        .map((record) => record.model);
+      await reload();
+      // 仍被引用而跳过的模型保持勾选，方便去处理对应监控项
+      setSelected(new Set(skippedInUse));
+      setBulkDeleteOpen(false);
+      setBulkNotice(
+        `已删除 ${deleted} 个模型${
+          skippedNames.length > 0
+            ? `；${skippedNames.length} 个仍被监控项引用未删除：${skippedNames
+                .slice(0, 5)
+                .join("、")}${skippedNames.length > 5 ? " 等" : ""}`
+            : ""
+        }`
+      );
+    } catch (removeError) {
+      setBulkError(errorMessage(removeError));
+    } finally {
+      setBulkPending(false);
+    }
+  }
 
   React.useEffect(() => {
     setTemplateError(null);
@@ -92,6 +131,29 @@ export function ModelsView() {
         setFormOpen(true);
       }}
     >
+      <BulkActionBar
+        count={selectedIds.length}
+        pending={bulkPending}
+        onClear={() => setSelected(new Set())}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-destructive"
+          onClick={() => {
+            setBulkError(null);
+            setBulkDeleteOpen(true);
+          }}
+        >
+          删除
+        </Button>
+      </BulkActionBar>
+      {bulkNotice ? (
+        <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">
+          {bulkNotice}
+        </p>
+      ) : null}
       {loading ? <p className="text-sm text-muted-foreground">正在加载模型</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {templateError ? (
@@ -101,6 +163,11 @@ export function ModelsView() {
         <DataTable
           records={filtered}
           getRowKey={(record) => record.id}
+          selection={{
+            selected,
+            onChange: setSelected,
+            getLabel: (record) => record.model,
+          }}
           emptyTitle="还没有模型"
           emptyActionLabel="新增模型"
           onCreate={() => {
@@ -159,6 +226,15 @@ export function ModelsView() {
         serverError={formError}
         onOpenChange={setFormOpen}
         onSubmit={save}
+      />
+      <DeleteConfirmDialog
+        open={bulkDeleteOpen}
+        title={`删除 ${selectedIds.length} 个模型`}
+        description="仍被监控项引用的模型会跳过，不会删除"
+        pending={bulkPending}
+        error={bulkError}
+        onOpenChange={setBulkDeleteOpen}
+        onConfirm={bulkRemove}
       />
       <DeleteConfirmDialog
         open={Boolean(deleting)}

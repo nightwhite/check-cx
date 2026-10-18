@@ -176,6 +176,8 @@ export interface AdminUpstreamModel {
   ownedBy: string | null;
   modelExists: boolean;
   monitored: boolean;
+  /** 已在其他渠道监控该模型的渠道名，仅用于提示，不影响勾选。 */
+  otherChannels?: string[];
 }
 
 export interface AdminImportModelsResult {

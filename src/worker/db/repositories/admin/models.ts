@@ -112,5 +112,33 @@ export function createAdminModelRepository(db: AdminD1Executor) {
         .run();
       return changed(result);
     },
+
+    /** 返回仍被监控项引用的模型 id，批量删除时据此跳过。 */
+    async listReferencedIds(ids: string[]) {
+      if (ids.length === 0) {
+        return new Set<string>();
+      }
+      const rows = await db
+        .prepare(
+          `SELECT DISTINCT model_id FROM check_configs
+           WHERE model_id IN (${ids.map(() => "?").join(", ")})`
+        )
+        .bind(...ids)
+        .all<{ model_id: string }>();
+      return new Set((rows.results ?? []).map((row) => row.model_id));
+    },
+
+    async bulkDelete(ids: string[]) {
+      if (ids.length === 0) {
+        return 0;
+      }
+      const result = await db
+        .prepare(
+          `DELETE FROM check_models WHERE id IN (${ids.map(() => "?").join(", ")})`
+        )
+        .bind(...ids)
+        .run();
+      return result.meta?.changes ?? 0;
+    },
   };
 }

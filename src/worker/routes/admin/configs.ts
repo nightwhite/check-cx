@@ -6,11 +6,13 @@ import {
   createAdminConfigRepository,
 } from "../../db/repositories/admin";
 import { getEncryptionKey, nowMs, routeError } from "./helpers";
+import type { BulkConfigPatch } from "../../db/repositories/admin";
 import {
   AdminConflictError,
   AdminNotFoundError,
   AdminValidationError,
   apiFormat,
+  bulkIds,
   optionalBoolean,
   optionalInteger,
   optionalString,
@@ -102,8 +104,124 @@ async function validateInheritedCredentials(
   }
 }
 
+function bulkPatch(body: Record<string, unknown>): BulkConfigPatch {
+  const raw = body.patch;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new AdminValidationError("请选择要修改的字段");
+  }
+  const input = raw as Record<string, unknown>;
+  const patch: BulkConfigPatch = {};
+  if ("enabled" in input) {
+    patch.enabled = optionalBoolean(input, "enabled", true);
+  }
+  if ("isMaintenance" in input) {
+    patch.isMaintenance = optionalBoolean(input, "isMaintenance", false);
+  }
+  if ("channelId" in input) {
+    patch.channelId = requiredString(input, "channelId", "渠道");
+  }
+  if ("apiFormat" in input) {
+    patch.apiFormat = apiFormat(requiredString(input, "apiFormat", "API 格式"));
+  }
+  if ("checkIntervalSeconds" in input) {
+    // null 表示恢复使用站点默认频次
+    const value = optionalInteger(input, "checkIntervalSeconds", "检查频次覆盖");
+    if (value !== null && (value < 15 || value > 3600)) {
+      throw new AdminValidationError("检查频次覆盖必须在 15 到 3600 秒之间");
+    }
+    patch.checkIntervalSeconds = value;
+  }
+  if (Object.keys(patch).length === 0) {
+    throw new AdminValidationError("请选择要修改的字段");
+  }
+  return patch;
+}
+
+// 改渠道后若监控项端点或 Key 依赖继承，目标渠道必须能提供对应信息
+async function validateBulkChannelMove(
+  env: Env,
+  ids: string[],
+  channelId: string
+) {
+  const channel = await createAdminChannelRepository(env.DB).findCredentials(
+    channelId
+  );
+  if (!channel) {
+    throw new AdminNotFoundError("渠道不存在");
+  }
+  const records = (await createAdminConfigRepository(env.DB).list()).filter(
+    (record) => ids.includes(record.id)
+  );
+  const blocked = records.filter(
+    (record) =>
+      (record.inheritsEndpoint && !channel.baseUrl) ||
+      (!record.hasApiKey && !channel.hasApiKey && !record.isMaintenance)
+  );
+  if (blocked.length > 0) {
+    throw new AdminConflictError(
+      `目标渠道缺少 Base URL 或 API Key，无法接收：${blocked
+        .slice(0, 5)
+        .map((record) => record.name)
+        .join("、")}${blocked.length > 5 ? ` 等 ${blocked.length} 项` : ""}`
+    );
+  }
+}
+
 export const adminConfigRoutes = new Hono<{ Bindings: Env }>()
   .get("/", async (c) => c.json(await createAdminConfigRepository(c.env.DB).list()))
+  .post("/bulk/update", async (c) => {
+    try {
+      const body = await readJsonObject(c.req.raw);
+      const ids = bulkIds(body);
+      const patch = bulkPatch(body);
+      if (patch.channelId) {
+        await validateBulkChannelMove(c.env, ids, patch.channelId);
+      }
+      const updated = await createAdminConfigRepository(c.env.DB).bulkUpdate(
+        ids,
+        patch,
+        nowMs()
+      );
+      return c.json({ updated });
+    } catch (error) {
+      return routeError(c, error);
+    }
+  })
+  .post("/bulk/delete", async (c) => {
+    try {
+      const ids = bulkIds(await readJsonObject(c.req.raw));
+      const deleted = await createAdminConfigRepository(c.env.DB).bulkDelete(ids);
+      return c.json({ deleted });
+    } catch (error) {
+      return routeError(c, error);
+    }
+  })
+  .post("/bulk/copy", async (c) => {
+    try {
+      const body = await readJsonObject(c.req.raw);
+      const ids = bulkIds(body);
+      const channelId = requiredString(body, "channelId", "目标渠道");
+      const channel = await createAdminChannelRepository(c.env.DB).findCredentials(
+        channelId
+      );
+      if (!channel) {
+        throw new AdminNotFoundError("渠道不存在");
+      }
+      if (!channel.baseUrl || !channel.hasApiKey) {
+        throw new AdminConflictError(
+          "目标渠道需同时配置 Base URL 与 API Key，复制的监控项会继承它们"
+        );
+      }
+      const result = await createAdminConfigRepository(c.env.DB).copyToChannel(
+        ids,
+        channelId,
+        nowMs()
+      );
+      return c.json(result, 201);
+    } catch (error) {
+      return routeError(c, error);
+    }
+  })
   .post("/", async (c) => {
     try {
       const body = await readJsonObject(c.req.raw);

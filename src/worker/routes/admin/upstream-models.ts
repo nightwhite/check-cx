@@ -101,15 +101,21 @@ export function createUpstreamModelRoutes(fetcher?: UpstreamFetch) {
         // 标记已存在的模型与已在该渠道监控的模型，前端据此默认勾选
         const models = createAdminModelRepository(c.env.DB);
         const configs = createAdminConfigRepository(c.env.DB);
+        const channelsByModel = await configs.listChannelNamesByModel();
         const result = [];
         for (const item of upstream) {
           const existing = await models.findByTypeAndName(item.type, item.id);
+          const monitoredChannels = existing
+            ? channelsByModel.get(existing.id) ?? []
+            : [];
           result.push({
             ...item,
             modelExists: Boolean(existing),
-            monitored: existing
-              ? await configs.existsForChannelModel(channelId, existing.id)
-              : false,
+            monitored: monitoredChannels.some((channel) => channel.id === channelId),
+            // 同一模型可以同时在多个渠道监控，这里只用于提示
+            otherChannels: monitoredChannels
+              .filter((channel) => channel.id !== channelId)
+              .map((channel) => channel.name),
           });
         }
         return c.json({ models: result });

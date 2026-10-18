@@ -204,6 +204,52 @@ export async function inheritAdminConfigSecret(id: string): Promise<void> {
   );
 }
 
+export interface AdminBulkConfigPatch {
+  enabled?: boolean;
+  isMaintenance?: boolean;
+  channelId?: string;
+  apiFormat?: "chat_completions" | "responses";
+  checkIntervalSeconds?: number | null;
+}
+
+export async function bulkUpdateAdminConfigs(
+  ids: string[],
+  patch: AdminBulkConfigPatch
+): Promise<{ updated: number }> {
+  return requestJson<{ updated: number }>(
+    "/api/admin/configs/bulk/update",
+    jsonInit("POST", { ids, patch })
+  );
+}
+
+export async function bulkDeleteAdminConfigs(
+  ids: string[]
+): Promise<{ deleted: number }> {
+  return requestJson<{ deleted: number }>(
+    "/api/admin/configs/bulk/delete",
+    jsonInit("POST", { ids })
+  );
+}
+
+export async function bulkCopyAdminConfigs(
+  ids: string[],
+  channelId: string
+): Promise<{ created: number; skipped: number }> {
+  return requestJson<{ created: number; skipped: number }>(
+    "/api/admin/configs/bulk/copy",
+    jsonInit("POST", { ids, channelId })
+  );
+}
+
+export async function bulkDeleteAdminModels(
+  ids: string[]
+): Promise<{ deleted: number; skippedInUse: string[] }> {
+  return requestJson<{ deleted: number; skippedInUse: string[] }>(
+    "/api/admin/models/bulk/delete",
+    jsonInit("POST", { ids })
+  );
+}
+
 export async function listAdminModels(): Promise<AdminModelRecord[]> {
   return requestJson<AdminModelRecord[]>("/api/admin/models");
 }

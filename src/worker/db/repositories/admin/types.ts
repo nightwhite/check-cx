@@ -67,6 +67,15 @@ export interface AdminConfigRecord {
 
 export type AdminKeySource = "config" | "channel" | "none";
 
+/** 批量修改监控项时允许改动的字段，未出现的字段保持不变。 */
+export interface BulkConfigPatch {
+  enabled?: boolean;
+  isMaintenance?: boolean;
+  channelId?: string;
+  apiFormat?: AdminApiFormat;
+  checkIntervalSeconds?: number | null;
+}
+
 export interface AdminGroupRecord {
   id: string;
   groupName: string;
