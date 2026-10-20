@@ -15,6 +15,8 @@ import type {
 const DEFAULT_TIMEOUT_MS = 120_000;
 /** 成功但超过此延迟的请求标记为 degraded。 */
 const DEGRADED_THRESHOLD_MS = 30_000;
+/** 探活请求的输出上限。部分上游（如 Azure）要求最小 16，32 为推理模型留出余量。 */
+const PROBE_MAX_OUTPUT_TOKENS = 32;
 const RESERVED_METADATA_KEYS = new Set([
   "contents",
   "generationConfig",
@@ -115,7 +117,7 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
     return {
       ...metadata,
       model: modelId,
-      max_tokens: 1,
+      max_tokens: PROBE_MAX_OUTPUT_TOKENS,
       messages: [{ role: "user", content: challenge.prompt }],
     };
   }
@@ -124,7 +126,7 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
     return {
       ...metadata,
       contents: [{ role: "user", parts: [{ text: challenge.prompt }] }],
-      generationConfig: { maxOutputTokens: 1 },
+      generationConfig: { maxOutputTokens: PROBE_MAX_OUTPUT_TOKENS },
     };
   }
 
@@ -139,7 +141,7 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
           content: [{ type: "input_text", text: challenge.prompt }],
         },
       ],
-      max_output_tokens: 1,
+      max_output_tokens: PROBE_MAX_OUTPUT_TOKENS,
       reasoning: { effort: "low" },
       stream: true,
     };
@@ -149,7 +151,7 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
     ...metadata,
     model: modelId,
     messages: [{ role: "user", content: challenge.prompt }],
-    max_tokens: 1,
+    max_tokens: PROBE_MAX_OUTPUT_TOKENS,
   };
 }
 
@@ -208,6 +210,14 @@ function extractResponseText(payload: unknown): string {
   const choiceContent = getString(choiceMessage?.content);
   if (choiceContent) {
     return choiceContent;
+  }
+
+  // 推理模型可能把内容放在 reasoning_content 里，content 为空；探活非空即视为可用。
+  const reasoningContent =
+    getString(choiceMessage?.reasoning_content) ??
+    getString(choiceMessage?.reasoning);
+  if (reasoningContent) {
+    return reasoningContent;
   }
 
   const anthropicContent = getObject(getArray(root.content)[0]);
@@ -495,7 +505,7 @@ async function performDirectTcpRequest(
     return {
       status,
       text,
-      bodyHead: bodyText.slice(0, 120),
+      bodyHead: bodyText.slice(0, 800),
       latencyMs: firstChunkLatencyMs ?? Math.max(0, now() - startedAt),
     };
   } finally {
@@ -611,6 +621,8 @@ export async function checkProvider(
     let latencyMs = Math.max(0, now() - startedAt);
 
     if (!response.ok) {
+      const errorBody = await response.text().catch(() => "");
+      const logMessage = errorBody.trim().slice(0, 800);
       return {
         ...buildBaseResult(
           config,
@@ -620,6 +632,7 @@ export async function checkProvider(
         ),
         latencyMs,
         pingLatencyMs,
+        ...(logMessage ? { logMessage } : {}),
       };
     }
 
