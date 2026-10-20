@@ -140,6 +140,7 @@ describe("checkProvider", () => {
 
     expect(result.status).toBe("failed");
     expect(result.message).toContain("500");
+    expect(result.logMessage).toContain("bad");
   });
 
   it("returns validation_failed when provider response is empty", async () => {
@@ -152,6 +153,23 @@ describe("checkProvider", () => {
     });
 
     expect(result.status).toBe("validation_failed");
+  });
+
+  it("accepts reasoning_content when message content is empty", async () => {
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () =>
+        jsonResponse({
+          choices: [
+            { message: { content: "", reasoning_content: "thinking" } },
+          ],
+        }),
+      measurePing: async () => null,
+      now: () => 1_000,
+    });
+
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("thinking");
   });
 
   it("returns operational for any non-empty reply", async () => {
@@ -276,7 +294,7 @@ describe("checkProvider", () => {
     const body = JSON.parse(String(init.body));
     expect(body).toMatchObject({
       model: "claude-3-5-haiku",
-      max_tokens: 1,
+      max_tokens: 32,
       messages: [{ role: "user", content: challenge.prompt }],
       temperature: 0,
     });
@@ -314,7 +332,7 @@ describe("checkProvider", () => {
     const body = JSON.parse(String(init.body));
     expect(body).toMatchObject({
       contents: [{ role: "user", parts: [{ text: challenge.prompt }] }],
-      generationConfig: { maxOutputTokens: 1 },
+      generationConfig: { maxOutputTokens: 32 },
       safetySettings: [],
     });
   });
@@ -380,7 +398,7 @@ describe("checkProvider", () => {
           content: [{ type: "input_text", text: challenge.prompt }],
         },
       ],
-      max_output_tokens: 1,
+      max_output_tokens: 32,
       reasoning: { effort: "low" },
       stream: true,
     });
@@ -527,7 +545,7 @@ describe("checkProvider", () => {
     expect(body).toMatchObject({
       model: "gemini-2.5-pro",
       messages: [{ role: "user", content: challenge.prompt }],
-      max_tokens: 1,
+      max_tokens: 32,
     });
     expect(body.contents).toBeUndefined();
   });
