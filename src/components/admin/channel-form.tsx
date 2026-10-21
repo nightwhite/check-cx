@@ -27,6 +27,7 @@ export function ChannelForm({
   const [websiteUrl, setWebsiteUrl] = React.useState("");
   const [statusPageUrl, setStatusPageUrl] = React.useState("");
   const [baseUrl, setBaseUrl] = React.useState("");
+  const [hostHeader, setHostHeader] = React.useState("");
   const [apiKey, setApiKey] = React.useState("");
   const [clearApiKey, setClearApiKey] = React.useState(false);
   const [sortOrder, setSortOrder] = React.useState("0");
@@ -42,6 +43,7 @@ export function ChannelForm({
     setWebsiteUrl(record?.websiteUrl ?? "");
     setStatusPageUrl(record?.statusPageUrl ?? "");
     setBaseUrl(record?.baseUrl ?? "");
+    setHostHeader(record?.hostHeader ?? "");
     setApiKey("");
     setClearApiKey(false);
     setSortOrder(String(record?.sortOrder ?? 0));
@@ -58,6 +60,9 @@ export function ChannelForm({
     if (!Number.isInteger(parsedSortOrder)) {
       nextErrors.sortOrder = "排序必须是整数";
     }
+    if (hostHeader.trim() && /^https:\/\//i.test(baseUrl.trim())) {
+      nextErrors.hostHeader = "填写直连 Host 时，API Base URL 必须是 http:// 地址";
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       return;
@@ -69,6 +74,7 @@ export function ChannelForm({
       websiteUrl: websiteUrl || null,
       statusPageUrl: statusPageUrl || null,
       baseUrl: baseUrl.trim() || null,
+      hostHeader: hostHeader.trim() || null,
       sortOrder: parsedSortOrder,
       enabled,
     };
@@ -135,6 +141,17 @@ export function ChannelForm({
               onChange={(event) => setBaseUrl(event.target.value)}
             />
           </Field>
+          <Field label="直连 Host（可选）" error={errors.hostHeader}>
+            <TextInput
+              value={hostHeader}
+              placeholder="如 www.example.com，留空按 Base URL 正常请求"
+              onChange={(event) => setHostHeader(event.target.value)}
+            />
+          </Field>
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Base URL 填源站 http 地址、这里填网关识别的域名时，获取模型与继承该渠道的监控项都会走
+            TCP 直连并改写 Host 头
+          </p>
           <Field label="API Key">
             <TextInput
               type="password"

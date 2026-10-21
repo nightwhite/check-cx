@@ -98,6 +98,8 @@ export interface AdminConfigRecord {
   channelLogoUrl: string | null;
   endpoint: string;
   hostHeader: string | null;
+  /** 实际使用的直连 Host：监控项留空时继承渠道。 */
+  effectiveHostHeader: string | null;
   apiFormat: AdminApiFormat;
   enabled: boolean;
   isMaintenance: boolean;
@@ -163,6 +165,7 @@ export interface AdminChannelRecord {
   websiteUrl: string | null;
   statusPageUrl: string | null;
   baseUrl: string | null;
+  hostHeader: string | null;
   hasApiKey: boolean;
   sortOrder: number;
   enabled: boolean;

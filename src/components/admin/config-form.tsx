@@ -235,7 +235,11 @@ export function ConfigForm({
         <Field label="直连 Host（可选）">
           <TextInput
             value={hostHeader}
-            placeholder="填写后走 TCP 直连，端点须为 http://"
+            placeholder={
+              !endpoint.trim() && selectedChannel?.hostHeader
+                ? `留空继承渠道：${selectedChannel.hostHeader}`
+                : "填写后走 TCP 直连，端点须为 http://"
+            }
             onChange={(event) => setHostHeader(event.target.value)}
           />
         </Field>

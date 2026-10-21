@@ -1,3 +1,7 @@
+import {
+  performDirectHttpRequest,
+  type OpenDirectSocket,
+} from "./direct-http";
 import type { WorkerProviderType } from "./types";
 
 export type UpstreamFetch = (
@@ -93,11 +97,48 @@ export function parseUpstreamModels(payload: unknown): UpstreamModel[] {
   return models.sort((left, right) => left.id.localeCompare(right.id));
 }
 
+export interface FetchUpstreamModelsOptions {
+  fetcher?: UpstreamFetch;
+  /** 直连 Host：填写后经 TCP 直连并改写 Host 头，Base URL 须为 http://。 */
+  hostHeader?: string | null;
+  openSocket?: OpenDirectSocket;
+  timeoutMs?: number;
+}
+
+/** 直连请求的结果包装成 Response，复用后续统一的状态码与 JSON 处理。 */
+async function fetchDirect(
+  url: string,
+  hostHeader: string,
+  headers: Headers,
+  timeoutMs: number,
+  openSocket?: OpenDirectSocket
+): Promise<Response> {
+  const direct = await performDirectHttpRequest({
+    method: "GET",
+    url,
+    hostHeader,
+    headers,
+    timeoutMs,
+    openSocket,
+  });
+  if (direct.status === 0) {
+    throw new Error("上游未返回有效的 HTTP 响应");
+  }
+  return new Response(direct.bodyText, {
+    status: direct.status,
+    headers: { "content-type": direct.contentType },
+  });
+}
+
 export async function fetchUpstreamModels(
   baseUrl: string,
   apiKey: string,
-  fetcher: UpstreamFetch = fetch,
-  timeoutMs = DEFAULT_TIMEOUT_MS
+  {
+    fetcher = fetch,
+    hostHeader,
+    openSocket,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  }: FetchUpstreamModelsOptions = {}
 ): Promise<UpstreamModel[]> {
   const google = isGoogleNative(baseUrl);
   const url = new URL(buildModelsUrl(baseUrl));
@@ -116,10 +157,12 @@ export async function fetchUpstreamModels(
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
-    response = await fetcher(url.toString(), {
-      headers,
-      signal: controller.signal,
-    });
+    response = hostHeader
+      ? await fetchDirect(url.toString(), hostHeader, headers, timeoutMs, openSocket)
+      : await fetcher(url.toString(), {
+          headers,
+          signal: controller.signal,
+        });
   } catch (error) {
     throw new UpstreamModelsError(
       controller.signal.aborted

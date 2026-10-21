@@ -56,7 +56,7 @@ describe("upstream models", () => {
   it("sends both auth headers to OpenAI-compatible upstreams", async () => {
     const fetcher = vi.fn(async () => Response.json({ data: [{ id: "gpt-6" }] }));
     await expect(
-      fetchUpstreamModels("https://api.example.com", "sk-test", fetcher)
+      fetchUpstreamModels("https://api.example.com", "sk-test", { fetcher })
     ).resolves.toHaveLength(1);
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.example.com/v1/models");
@@ -70,27 +70,82 @@ describe("upstream models", () => {
     await fetchUpstreamModels(
       "https://generativelanguage.googleapis.com",
       "g-key",
-      fetcher
+      { fetcher }
     );
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect(new URL(url).searchParams.get("key")).toBe("g-key");
     expect(new Headers(init.headers).get("authorization")).toBeNull();
   });
 
+  it("fetches through a direct socket with the custom Host header", async () => {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    let sent = "";
+    const fetcher = vi.fn();
+    const openSocket = vi.fn((url: URL) => ({
+      url,
+      readable: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
+                "Transfer-Encoding: chunked\r\n\r\n" +
+                '1a\r\n{"data":[{"id":"gpt-6"}]}\r\n0\r\n\r\n'
+            )
+          );
+          controller.close();
+        },
+      }),
+      writable: new WritableStream<Uint8Array>({
+        write(chunk) {
+          sent += decoder.decode(chunk);
+        },
+      }),
+      close() {},
+    }));
+
+    const models = await fetchUpstreamModels("http://10.0.0.5:8080", "sk-test", {
+      fetcher,
+      hostHeader: "www.example.com",
+      openSocket,
+    });
+
+    expect(models.map((model) => model.id)).toEqual(["gpt-6"]);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(openSocket.mock.calls[0][0].toString()).toBe(
+      "http://10.0.0.5:8080/v1/models"
+    );
+    expect(sent).toContain("GET /v1/models HTTP/1.1");
+    expect(sent).toContain("Host: www.example.com");
+    expect(sent).toContain("authorization: Bearer sk-test");
+    expect(sent).not.toContain("Content-Length");
+  });
+
+  it("rejects direct mode for https base urls", async () => {
+    await expect(
+      fetchUpstreamModels("https://10.0.0.5", "k", {
+        hostHeader: "www.example.com",
+        openSocket: vi.fn(),
+      })
+    ).rejects.toThrow("直连模式仅支持 http://");
+  });
+
   it("reports auth failures, HTTP errors and network errors in Chinese", async () => {
     await expect(
-      fetchUpstreamModels("https://a.example.com", "k", async () =>
-        new Response("no", { status: 401 })
-      )
+      fetchUpstreamModels("https://a.example.com", "k", {
+        fetcher: async () => new Response("no", { status: 401 }),
+      })
     ).rejects.toThrow("上游拒绝了 API Key（HTTP 401）");
     await expect(
-      fetchUpstreamModels("https://a.example.com", "k", async () =>
-        new Response("no", { status: 502 })
-      )
+      fetchUpstreamModels("https://a.example.com", "k", {
+        fetcher: async () => new Response("no", { status: 502 }),
+      })
     ).rejects.toThrow("上游返回 HTTP 502");
     await expect(
-      fetchUpstreamModels("https://a.example.com", "k", async () => {
-        throw new TypeError("fetch failed");
+      fetchUpstreamModels("https://a.example.com", "k", {
+        fetcher: async () => {
+          throw new TypeError("fetch failed");
+        },
       })
     ).rejects.toThrow("无法连接上游：fetch failed");
   });

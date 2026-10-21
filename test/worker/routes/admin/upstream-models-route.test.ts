@@ -10,10 +10,13 @@ import {
   loginAdmin,
 } from "./admin-route-test-helpers";
 
-function createApp(fetcher: Parameters<typeof createUpstreamModelRoutes>[0]) {
+function createApp(
+  fetcher: Parameters<typeof createUpstreamModelRoutes>[0],
+  openSocket?: Parameters<typeof createUpstreamModelRoutes>[1]
+) {
   const admin = new Hono<{ Bindings: Env }>();
   admin.use("/*", requireAdminSession);
-  admin.route("/channels", createUpstreamModelRoutes(fetcher));
+  admin.route("/channels", createUpstreamModelRoutes(fetcher, openSocket));
   const app = new Hono<{ Bindings: Env }>();
   app.route("/api/admin", admin);
   return app;
@@ -94,6 +97,52 @@ describe("admin upstream model import", () => {
       error: "渠道未配置 Base URL，无法获取上游模型",
     });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("lists upstream models through the channel direct host header", async () => {
+    const { env, cookie, channelId } = await setup({
+      baseUrl: "http://10.0.0.5:8080",
+      hostHeader: "www.example.com",
+      apiKey: "sk-relay",
+    });
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    let sent = "";
+    const fetcher = vi.fn();
+    const openSocket = vi.fn((url: URL) => ({
+      url,
+      readable: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" +
+                '{"data":[{"id":"gpt-6"}]}'
+            )
+          );
+          controller.close();
+        },
+      }),
+      writable: new WritableStream<Uint8Array>({
+        write(chunk) {
+          sent += decoder.decode(chunk);
+        },
+      }),
+      close() {},
+    }));
+
+    const response = await createApp(fetcher, openSocket).request(
+      `http://example.com/api/admin/channels/${channelId}/upstream-models`,
+      { headers: { Cookie: cookie } },
+      env
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      models: [{ id: "gpt-6" }],
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(sent).toContain("GET /v1/models HTTP/1.1");
+    expect(sent).toContain("Host: www.example.com");
   });
 
   it("surfaces upstream failures as 409 with a readable message", async () => {

@@ -6,6 +6,7 @@ import {
   createAdminConfigRepository,
   createAdminModelRepository,
 } from "../../db/repositories/admin";
+import type { OpenDirectSocket } from "../../providers/direct-http";
 import {
   fetchUpstreamModels,
   UpstreamModelsError,
@@ -49,7 +50,7 @@ async function loadChannelCredentials(env: Env, channelId: string) {
   ).catch(() => {
     throw new AdminConflictError("渠道 API Key 解密失败，请重新保存渠道 Key");
   });
-  return { baseUrl: row.base_url, apiKey };
+  return { baseUrl: row.base_url, hostHeader: row.host_header, apiKey };
 }
 
 interface ImportItem {
@@ -83,13 +84,23 @@ function parseImportItems(body: Record<string, unknown>): ImportItem[] {
   });
 }
 
-export function createUpstreamModelRoutes(fetcher?: UpstreamFetch) {
+export function createUpstreamModelRoutes(
+  fetcher?: UpstreamFetch,
+  openSocket?: OpenDirectSocket
+) {
   return new Hono<{ Bindings: Env }>()
     .get("/:id/upstream-models", async (c) => {
       try {
         const channelId = c.req.param("id");
-        const { baseUrl, apiKey } = await loadChannelCredentials(c.env, channelId);
-        const upstream = await fetchUpstreamModels(baseUrl, apiKey, fetcher).catch(
+        const { baseUrl, hostHeader, apiKey } = await loadChannelCredentials(
+          c.env,
+          channelId
+        );
+        const upstream = await fetchUpstreamModels(baseUrl, apiKey, {
+          fetcher,
+          hostHeader,
+          openSocket,
+        }).catch(
           (error) => {
             if (error instanceof UpstreamModelsError) {
               throw new UpstreamRouteError(error.message);

@@ -8,6 +8,7 @@ import {
   AdminNotFoundError,
   AdminValidationError,
   optionalBoolean,
+  optionalHostHeader,
   optionalHttpUrl,
   optionalString,
   readJsonObject,
@@ -34,12 +35,20 @@ async function channelPayload(
   now = nowMs()
 ) {
   const apiKey = optionalString(body, "apiKey");
+  const baseUrl = optionalBaseUrl(body);
+  const hostHeader = optionalHostHeader(body, "hostHeader");
+  if (hostHeader && !baseUrl?.startsWith("http://")) {
+    throw new AdminValidationError(
+      "填写直连 Host 时，API Base URL 必须是 http:// 地址"
+    );
+  }
   return {
     name: requiredString(body, "name", "渠道名称"),
     logoUrl: optionalHttpUrl(body, "logoUrl", "Logo URL"),
     websiteUrl: optionalHttpUrl(body, "websiteUrl", "官网链接"),
     statusPageUrl: optionalHttpUrl(body, "statusPageUrl", "官方状态页链接"),
-    baseUrl: optionalBaseUrl(body),
+    baseUrl,
+    hostHeader,
     encryptedKey: apiKey
       ? await encryptProviderKey(apiKey, getEncryptionKey(env))
       : null,

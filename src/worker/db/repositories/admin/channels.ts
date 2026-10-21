@@ -15,6 +15,7 @@ interface ChannelRow {
   website_url: string | null;
   status_page_url: string | null;
   base_url: string | null;
+  host_header: string | null;
   has_api_key: number;
   sort_order: number;
   enabled: number;
@@ -34,6 +35,7 @@ interface ChannelCredentialsRow {
 
 interface ChannelSecretRow {
   base_url: string | null;
+  host_header: string | null;
   api_key_ciphertext: string | null;
   api_key_nonce: string | null;
   api_key_version: number | null;
@@ -50,6 +52,7 @@ function toRecord(row: ChannelRow): AdminChannelRecord {
     websiteUrl: row.website_url,
     statusPageUrl: row.status_page_url,
     baseUrl: row.base_url,
+    hostHeader: row.host_header,
     hasApiKey: bool(row.has_api_key),
     sortOrder: row.sort_order,
     enabled: bool(row.enabled),
@@ -64,10 +67,10 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
       await db
         .prepare(
           `INSERT INTO channels
-             (id, name, logo_url, website_url, status_page_url, base_url,
+             (id, name, logo_url, website_url, status_page_url, base_url, host_header,
               api_key_ciphertext, api_key_nonce, api_key_version, sort_order,
               enabled, created_at_ms, updated_at_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           input.id,
@@ -76,6 +79,7 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
           input.websiteUrl,
           input.statusPageUrl,
           input.baseUrl,
+          input.hostHeader,
           input.encryptedKey?.ciphertext ?? null,
           input.encryptedKey?.nonce ?? null,
           input.encryptedKey?.version ?? 1,
@@ -91,7 +95,7 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
       const rows = await db
         .prepare(
           `SELECT id, name, logo_url, website_url, status_page_url, base_url,
-                  ${HAS_API_KEY_SQL},
+                  host_header, ${HAS_API_KEY_SQL},
                   sort_order, enabled, created_at_ms, updated_at_ms
            FROM channels
            ORDER BY sort_order ASC, name ASC`
@@ -110,6 +114,7 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
                website_url = ?,
                status_page_url = ?,
                base_url = ?,
+               host_header = ?,
                sort_order = ?,
                enabled = ?,
                updated_at_ms = ?
@@ -121,6 +126,7 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
           input.websiteUrl,
           input.statusPageUrl,
           input.baseUrl,
+          input.hostHeader,
           input.sortOrder,
           input.enabled,
           input.nowMs,
@@ -175,7 +181,7 @@ export function createAdminChannelRepository(db: AdminD1Executor) {
     async findSecret(id: string) {
       return await db
         .prepare(
-          `SELECT base_url, api_key_ciphertext, api_key_nonce, api_key_version
+          `SELECT base_url, host_header, api_key_ciphertext, api_key_nonce, api_key_version
            FROM channels
            WHERE id = ?`
         )

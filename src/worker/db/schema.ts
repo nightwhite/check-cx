@@ -55,6 +55,7 @@ export const channels = sqliteTable("channels", {
   websiteUrl: text("website_url"),
   statusPageUrl: text("status_page_url"),
   baseUrl: text("base_url"),
+  hostHeader: text("host_header"),
   apiKeyCiphertext: text("api_key_ciphertext"),
   apiKeyNonce: text("api_key_nonce"),
   apiKeyVersion: integer("api_key_version").notNull().default(1),
