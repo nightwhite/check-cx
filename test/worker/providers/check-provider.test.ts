@@ -207,6 +207,106 @@ describe("checkProvider", () => {
     expect(result.status).toBe("validation_failed");
   });
 
+  it("logs the raw body when the reply is empty without generated tokens", async () => {
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () =>
+        jsonResponse({
+          choices: [{ message: { content: "" }, finish_reason: "stop" }],
+          usage: { completion_tokens: 0 },
+        }),
+      measurePing: async () => null,
+      now: () => 1_000,
+    });
+
+    expect(result.status).toBe("validation_failed");
+    expect(result.message).toBe("响应为空");
+    expect(result.logMessage).toContain('"finish_reason":"stop"');
+  });
+
+  it("treats empty content with generated reasoning tokens as operational", async () => {
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () =>
+        jsonResponse({
+          choices: [{ message: { content: "" }, finish_reason: "length" }],
+          usage: {
+            completion_tokens: 32,
+            completion_tokens_details: { reasoning_tokens: 32 },
+          },
+        }),
+      measurePing: async () => null,
+      now: () => 1_000,
+    });
+
+    expect(result.status).toBe("operational");
+    expect(result.message).toBe("OK");
+    expect(result.logMessage).toContain("32 个输出 token");
+  });
+
+  it("treats a truncated reply without usage as operational", async () => {
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () =>
+        jsonResponse({
+          choices: [{ message: { content: null }, finish_reason: "length" }],
+        }),
+      measurePing: async () => null,
+      now: () => 1_000,
+    });
+
+    expect(result.status).toBe("operational");
+  });
+
+  it("treats Responses streams that only produced reasoning tokens as operational", async () => {
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
+        model: "deepseek-v4-1-flash",
+      },
+      {
+        challenge,
+        fetcher: async () =>
+          textStreamResponse([
+            'data: {"type":"response.output_item.added","item":{"type":"reasoning"}}\n\n',
+            'data: {"type":"response.incomplete","response":{"status":"incomplete",' +
+              '"incomplete_details":{"reason":"max_output_tokens"},' +
+              '"usage":{"output_tokens":32,"output_tokens_details":{"reasoning_tokens":32}}}}\n\n',
+          ]),
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toContain("32 个输出 token");
+  });
+
+  it("logs the raw stream when a Responses stream has no text or tokens", async () => {
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
+        model: "deepseek-v4-1-flash",
+      },
+      {
+        challenge,
+        fetcher: async () =>
+          textStreamResponse([
+            'data: {"type":"response.completed","response":{"status":"completed","usage":{"output_tokens":0}}}\n\n',
+          ]),
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("validation_failed");
+    expect(result.logMessage).toContain("response.completed");
+  });
+
   it("accepts reasoning_content when message content is empty", async () => {
     const result = await checkProvider(baseConfig, {
       challenge,
