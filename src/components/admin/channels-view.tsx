@@ -126,6 +126,7 @@ export function ChannelsView() {
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {record.hasApiKey ? "Key 已配置" : "Key 未配置"}
+                    {record.hostHeader ? ` · 直连 Host ${record.hostHeader}` : ""}
                   </p>
                 </div>
               ),

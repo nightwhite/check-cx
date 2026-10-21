@@ -334,4 +334,57 @@ describe("provider config repository", () => {
     expect(configs[0]).not.toHaveProperty("configError");
     expect(configs[1]).not.toHaveProperty("configError");
   });
+
+  it("inherits channel host header only when the endpoint is inherited", async () => {
+    const db = await createMigratedDatabase();
+    const encryptionKey = "0123456789abcdef0123456789abcdef";
+    const channelKey = await encryptProviderKey("sk-channel", encryptionKey);
+
+    db.prepare(
+      `INSERT INTO channels (id, name, base_url, host_header, api_key_ciphertext, api_key_nonce, api_key_version, created_at_ms, updated_at_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "channel-1",
+      "Intranet",
+      "http://10.0.0.5:8080",
+      "www.example.com",
+      channelKey.ciphertext,
+      channelKey.nonce,
+      channelKey.version,
+      1,
+      1
+    );
+    db.prepare(
+      "INSERT INTO check_models (id, type, model, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?)"
+    ).run("model-1", "openai", "gpt-6", 1, 1);
+    const insertConfig = db.prepare(
+      `INSERT INTO check_configs (
+         id, name, type, model_id, channel_id, endpoint, host_header, api_format,
+         enabled, is_maintenance, created_at_ms, updated_at_ms
+       ) VALUES (?, ?, 'openai', 'model-1', 'channel-1', ?, ?, 'responses', 1, 0, 1, 1)`
+    );
+    insertConfig.run("a-inherit", "Inherit", "", null);
+    insertConfig.run("b-own-host", "Own host", "", "api.example.com");
+    insertConfig.run(
+      "c-own-endpoint",
+      "Own endpoint",
+      "https://public.example.com/v1/responses",
+      null
+    );
+
+    const configs = await loadEnabledProviderConfigs(
+      new D1SqliteAdapter(db),
+      encryptionKey
+    );
+
+    expect(configs).toEqual([
+      expect.objectContaining({
+        id: "a-inherit",
+        endpoint: "http://10.0.0.5:8080/v1/responses",
+        hostHeader: "www.example.com",
+      }),
+      expect.objectContaining({ id: "b-own-host", hostHeader: "api.example.com" }),
+      expect.objectContaining({ id: "c-own-endpoint", hostHeader: null }),
+    ]);
+  });
 });

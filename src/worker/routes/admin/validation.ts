@@ -122,6 +122,18 @@ export function optionalHttpUrl(
   throw new AdminValidationError(`${label} 必须是 http/https URL`);
 }
 
+/** 直连 Host 只能是域名，不能带端口或路径。 */
+export function optionalHostHeader(
+  body: Record<string, unknown>,
+  key: string
+): string | null {
+  const value = optionalString(body, key);
+  if (value && (value.length > 255 || /[:/\s]/.test(value))) {
+    throw new AdminValidationError("直连 Host 只能是域名，不能包含端口或路径");
+  }
+  return value;
+}
+
 export function optionalHttpOrigin(
   body: Record<string, unknown>,
   key: string,

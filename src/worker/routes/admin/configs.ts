@@ -14,6 +14,7 @@ import {
   apiFormat,
   bulkIds,
   optionalBoolean,
+  optionalHostHeader,
   optionalInteger,
   optionalString,
   providerType,
@@ -37,10 +38,7 @@ function baseConfigPayload(body: Record<string, unknown>, now = nowMs()) {
   if (region && region.length > 80) {
     throw new AdminValidationError("Region / 备注不能超过 80 个字符");
   }
-  const hostHeader = optionalString(body, "hostHeader");
-  if (hostHeader && (hostHeader.length > 255 || /[:/]/.test(hostHeader))) {
-    throw new AdminValidationError("直连 Host 只能是域名，不能包含端口或路径");
-  }
+  const hostHeader = optionalHostHeader(body, "hostHeader");
 
   return {
     name: requiredString(body, "name", "配置名称"),

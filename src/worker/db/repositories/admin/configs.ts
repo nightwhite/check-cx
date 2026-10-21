@@ -24,6 +24,7 @@ interface ConfigRow {
   channel_name: string | null;
   channel_logo_url: string | null;
   channel_base_url: string | null;
+  channel_host_header: string | null;
   channel_has_api_key: number | null;
   endpoint: string;
   host_header: string | null;
@@ -78,6 +79,14 @@ function resolveEffectiveEndpoint(row: ConfigRow): string | null {
   });
 }
 
+// 渠道直连 Host 与渠道 Base URL 配套，只在监控项继承渠道端点时生效。
+function resolveEffectiveHostHeader(row: ConfigRow): string | null {
+  if (row.host_header) {
+    return row.host_header;
+  }
+  return row.endpoint.trim() ? null : row.channel_host_header;
+}
+
 function toRecord(row: ConfigRow): AdminConfigRecord {
   return {
     id: row.id,
@@ -92,6 +101,7 @@ function toRecord(row: ConfigRow): AdminConfigRecord {
     channelLogoUrl: row.channel_logo_url,
     endpoint: row.endpoint,
     hostHeader: row.host_header,
+    effectiveHostHeader: resolveEffectiveHostHeader(row),
     apiFormat: row.api_format,
     enabled: bool(row.enabled),
     isMaintenance: bool(row.is_maintenance),
@@ -188,6 +198,7 @@ export function createAdminConfigRepository(db: AdminD1Executor) {
                   m.template_id, t.name AS template_name,
                   c.channel_id, ch.name AS channel_name, ch.logo_url AS channel_logo_url,
                   ch.base_url AS channel_base_url,
+                  ch.host_header AS channel_host_header,
                   CASE WHEN ch.api_key_ciphertext IS NOT NULL AND ch.api_key_nonce IS NOT NULL
                     THEN 1 ELSE 0 END AS channel_has_api_key,
                   c.endpoint, c.host_header, c.api_format, c.enabled, c.is_maintenance, c.group_name,

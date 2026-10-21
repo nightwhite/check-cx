@@ -138,6 +138,50 @@ describe("admin channels route", () => {
     expect(response.status).toBe(400);
   });
 
+  it("saves the channel direct host header and requires an http base url", async () => {
+    const { app, env, cookie } = await setup();
+    const payload = {
+      name: "Intranet Relay",
+      baseUrl: "http://10.0.0.5:8080",
+      hostHeader: "www.example.com",
+      sortOrder: 10,
+      enabled: true,
+    };
+
+    const created = await app.request(
+      "http://example.com/api/admin/channels",
+      jsonRequest("POST", cookie, payload),
+      env
+    );
+    expect(created.status).toBe(201);
+    await expect(created.json()).resolves.toMatchObject({
+      baseUrl: "http://10.0.0.5:8080",
+      hostHeader: "www.example.com",
+    });
+
+    const httpsBase = await app.request(
+      "http://example.com/api/admin/channels",
+      jsonRequest("POST", cookie, {
+        ...payload,
+        name: "Https Relay",
+        baseUrl: "https://relay.example.com",
+      }),
+      env
+    );
+    expect(httpsBase.status).toBe(400);
+
+    const badHost = await app.request(
+      "http://example.com/api/admin/channels",
+      jsonRequest("POST", cookie, {
+        ...payload,
+        name: "Bad Host",
+        hostHeader: "www.example.com:8080",
+      }),
+      env
+    );
+    expect(badHost.status).toBe(400);
+  });
+
   it("rejects duplicate channel names", async () => {
     const { app, env, cookie } = await setup();
     const payload = {

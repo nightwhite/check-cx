@@ -30,6 +30,7 @@ interface ProviderConfigRow {
   channel_name: string | null;
   channel_logo_url: string | null;
   channel_base_url: string | null;
+  channel_host_header: string | null;
   channel_api_key_ciphertext: string | null;
   channel_api_key_nonce: string | null;
   channel_api_key_version: number | null;
@@ -171,6 +172,7 @@ export async function loadEnabledProviderConfigs(
          ch.name AS channel_name,
          ch.logo_url AS channel_logo_url,
          ch.base_url AS channel_base_url,
+         ch.host_header AS channel_host_header,
          ch.api_key_ciphertext AS channel_api_key_ciphertext,
          ch.api_key_nonce AS channel_api_key_nonce,
          ch.api_key_version AS channel_api_key_version,
@@ -210,7 +212,10 @@ export async function loadEnabledProviderConfigs(
         name: row.name,
         type: assertProviderType(row.type),
         endpoint,
-        hostHeader: row.host_header,
+        // 渠道直连 Host 与渠道 Base URL 配套，只在监控项继承渠道端点时生效
+        hostHeader:
+          row.host_header ??
+          (row.endpoint.trim() ? null : row.channel_host_header),
         apiFormat: row.api_format,
         model: row.model,
         apiKey,

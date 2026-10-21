@@ -4,6 +4,10 @@ import {
   validateResponse,
   type Challenge,
 } from "./challenge";
+import {
+  performDirectHttpRequest,
+  type OpenDirectSocket,
+} from "./direct-http";
 import { measureEndpointPing, type WorkerFetch } from "./endpoint-ping";
 import type {
   WorkerCheckResult,
@@ -31,19 +35,13 @@ const RESERVED_METADATA_KEYS = new Set([
 const GOOGLE_GENERATIVE_API_REGEX =
   /\/v\d+\w*\/models\/[^/:]+:(generateContent|streamGenerateContent)\/?$/;
 
-export interface DirectTcpSocket {
-  readable: ReadableStream<Uint8Array>;
-  writable: WritableStream<Uint8Array>;
-  close(): void;
-}
-
 export interface CheckProviderOptions {
   challenge?: Challenge;
   fetcher?: WorkerFetch;
   measurePing?: (endpoint: string) => Promise<number | null>;
   now?: () => number;
   timeoutMs?: number;
-  openSocket?: (url: URL) => Promise<DirectTcpSocket> | DirectTcpSocket;
+  openSocket?: OpenDirectSocket;
 }
 
 function buildBaseResult(
@@ -488,14 +486,6 @@ function getErrorLog(error: unknown): string {
   return typeof error === "string" ? error.slice(0, 2400) : "unknown error";
 }
 
-async function openCloudflareSocket(url: URL): Promise<DirectTcpSocket> {
-  const { connect } = await import("cloudflare:sockets");
-  return connect({
-    hostname: url.hostname,
-    port: url.port ? Number(url.port) : 80,
-  });
-}
-
 function extractTextFromSseBody(bodyText: string): string {
   let text = "";
   for (const rawEvent of bodyText.split(/\r?\n\r?\n/)) {
@@ -506,47 +496,6 @@ function extractTextFromSseBody(bodyText: string): string {
   return text;
 }
 
-function concatBytes(chunks: Uint8Array[]): Uint8Array {
-  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return out;
-}
-
-/** chunked 的块大小按字节计数，必须基于字节解码，字符串切片会因多字节字符错位。 */
-function decodeChunkedBodyBytes(input: Uint8Array): Uint8Array {
-  const parts: Uint8Array[] = [];
-  let index = 0;
-  const sizeDecoder = new TextDecoder();
-  while (index < input.length) {
-    let lineEnd = index;
-    while (
-      lineEnd + 1 < input.length &&
-      !(input[lineEnd] === 13 && input[lineEnd + 1] === 10)
-    ) {
-      lineEnd++;
-    }
-    if (lineEnd + 1 >= input.length) {
-      break;
-    }
-    const sizeToken = sizeDecoder
-      .decode(input.subarray(index, lineEnd))
-      .split(";")[0]
-      .trim();
-    const size = Number.parseInt(sizeToken, 16);
-    if (!Number.isFinite(size) || size <= 0) {
-      break;
-    }
-    parts.push(input.subarray(lineEnd + 2, lineEnd + 2 + size));
-    index = lineEnd + 2 + size + 2;
-  }
-  return concatBytes(parts);
-}
-
 async function performDirectTcpRequest(
   config: WorkerProviderConfig,
   challenge: Challenge,
@@ -554,117 +503,58 @@ async function performDirectTcpRequest(
   startedAt: number,
   now: () => number
 ): Promise<{ status: number; text: string; bodyHead: string; latencyMs: number }> {
-  const url = new URL(config.endpoint);
-  if (url.protocol !== "http:") {
-    throw new Error("直连模式仅支持 http:// 端点（自定义 Host 无法通过 TLS 证书校验）");
+  let firstChunkLatencyMs: number | null = null;
+  const response = await performDirectHttpRequest({
+    method: "POST",
+    url: config.endpoint,
+    hostHeader: config.hostHeader ?? "",
+    headers: buildHeaders(config),
+    body: JSON.stringify(buildRequestBody(config, challenge)),
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    openSocket: options.openSocket,
+    onFirstChunk: () => {
+      firstChunkLatencyMs = Math.max(0, now() - startedAt);
+    },
+  });
+  const { status, head, bodyText } = response;
+
+  let text = "";
+  if (status >= 200 && status < 300) {
+    if (response.contentType.includes("text/event-stream")) {
+      text = extractTextFromSseBody(bodyText);
+    } else {
+      try {
+        text = extractResponseText(JSON.parse(bodyText));
+      } catch {
+        text = "";
+      }
+    }
   }
 
-  const openSocket = options.openSocket ?? openCloudflareSocket;
-  const socket = await openSocket(url);
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const timer = setTimeout(() => {
-    try {
-      socket.close();
-    } catch {
-      // 关闭已断开的套接字无需处理。
-    }
-  }, timeoutMs);
-
-  try {
-    const writer = socket.writable.getWriter();
-    const body = JSON.stringify(buildRequestBody(config, challenge));
-    const bodyBytes = new TextEncoder().encode(body);
-    const headerLines: string[] = [`Host: ${config.hostHeader}`];
-    buildHeaders(config).forEach((value, key) => {
-      const lower = key.toLowerCase();
-      if (lower === "host" || lower === "content-length" || lower === "connection") {
-        return;
-      }
-      headerLines.push(`${key}: ${value}`);
-    });
-    headerLines.push(`Content-Length: ${bodyBytes.length}`, "Connection: close");
-    const request = `${[
-      `POST ${url.pathname}${url.search} HTTP/1.1`,
-      ...headerLines,
-    ].join("\r\n")}\r\n\r\n`;
-    await writer.write(new TextEncoder().encode(request));
-    await writer.write(bodyBytes);
-
-    const reader = socket.readable.getReader();
-    let firstChunkLatencyMs: number | null = null;
-    const byteChunks: Uint8Array[] = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      firstChunkLatencyMs ??= Math.max(0, now() - startedAt);
-      byteChunks.push(value);
-    }
-    const rawBytes = concatBytes(byteChunks);
-    const raw = new TextDecoder().decode(rawBytes);
-
-    const headerEndIndex = raw.indexOf("\r\n\r\n");
-    const head = headerEndIndex === -1 ? raw : raw.slice(0, headerEndIndex);
-    const statusMatch = head.match(/^HTTP\/\d(?:\.\d)? (\d{3})/);
-    const status = statusMatch ? Number(statusMatch[1]) : 0;
-
-    // 头部为 ASCII，字符串索引与字节偏移一致，可安全用于切分字节流。
-    const bodyStartByte = headerEndIndex === -1 ? rawBytes.length : headerEndIndex + 4;
-    let responseBodyBytes = rawBytes.subarray(bodyStartByte);
-    if (/transfer-encoding:\s*chunked/i.test(head)) {
-      responseBodyBytes = decodeChunkedBodyBytes(responseBodyBytes);
-    }
-    const bodyText = new TextDecoder().decode(responseBodyBytes);
-
-    let text = "";
-    if (status >= 200 && status < 300) {
-      const contentType = (
-        head.match(/content-type:\s*([^\r\n]+)/i)?.[1] ?? ""
-      ).toLowerCase();
-      if (contentType.includes("text/event-stream")) {
-        text = extractTextFromSseBody(bodyText);
-      } else {
-        try {
-          text = extractResponseText(JSON.parse(bodyText));
-        } catch {
-          text = "";
-        }
-      }
-    }
-
-    const logParts = [
-      `POST ${redactUrl(url.toString())} HTTP/1.1`,
-      `Host: ${config.hostHeader ?? ""}`,
-    ];
-    if (head) {
-      logParts.push(
-        "",
-        head
-          .split(/\r?\n/)
-          .filter((line) => !/^set-cookie:/i.test(line))
-          .join("\n")
-      );
-    }
-    const bodyForLog = bodyText.trim().slice(0, 1200);
-    if (bodyForLog) {
-      logParts.push("", bodyForLog);
-    }
-
-    return {
-      status,
-      text,
-      bodyHead: logParts.join("\n").slice(0, 2400),
-      latencyMs: firstChunkLatencyMs ?? Math.max(0, now() - startedAt),
-    };
-  } finally {
-    clearTimeout(timer);
-    try {
-      socket.close();
-    } catch {
-      // 关闭已断开的套接字无需处理。
-    }
+  const logParts = [
+    `POST ${redactUrl(config.endpoint)} HTTP/1.1`,
+    `Host: ${config.hostHeader ?? ""}`,
+  ];
+  if (head) {
+    logParts.push(
+      "",
+      head
+        .split(/\r?\n/)
+        .filter((line) => !/^set-cookie:/i.test(line))
+        .join("\n")
+    );
   }
+  const bodyForLog = bodyText.trim().slice(0, 1200);
+  if (bodyForLog) {
+    logParts.push("", bodyForLog);
+  }
+
+  return {
+    status,
+    text,
+    bodyHead: logParts.join("\n").slice(0, 2400),
+    latencyMs: firstChunkLatencyMs ?? Math.max(0, now() - startedAt),
+  };
 }
 
 function buildTextCheckResult(
