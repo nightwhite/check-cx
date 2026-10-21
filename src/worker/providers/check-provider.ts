@@ -249,9 +249,18 @@ function extractResponseText(payload: unknown): string {
 
 /** 探活解析结果：可见文本与上游报告的输出 token 数。 */
 interface ProbeOutput {
+  /** 增量事件拼出的文本。 */
   text: string;
+  /** 收尾事件给出的完整文本，上游不发增量事件时兜底使用。 */
+  finalText: string;
   /** 输出 token 数（含推理 token）；上游未提供时为 null。 */
   outputTokens: number | null;
+  /** 流式事件类型序列，响应为空时写入日志便于排查。 */
+  events: string[];
+}
+
+function emptyProbeOutput(): ProbeOutput {
+  return { text: "", finalText: "", outputTokens: null, events: [] };
 }
 
 /**
@@ -287,6 +296,7 @@ function extractOutputTokens(payload: unknown): number | null {
 
 function extractProbeOutput(payload: unknown): ProbeOutput {
   return {
+    ...emptyProbeOutput(),
     text: extractResponseText(payload),
     outputTokens: extractOutputTokens(payload),
   };
@@ -294,7 +304,44 @@ function extractProbeOutput(payload: unknown): ProbeOutput {
 
 function appendProbeOutput(target: ProbeOutput, next: ProbeOutput) {
   target.text += next.text;
+  target.finalText = next.finalText || target.finalText;
   target.outputTokens = next.outputTokens ?? target.outputTokens;
+  target.events.push(...next.events);
+}
+
+/** 部分上游不发增量事件，只在收尾事件里给出完整文本。 */
+function extractFinalTextFromResponseStreamEvent(
+  root: Record<string, unknown>
+): string {
+  switch (root.type) {
+    case "response.output_text.done":
+      return getString(root.text) ?? "";
+    case "response.content_part.done":
+      return getString(getObject(root.part)?.text) ?? "";
+    case "response.output_item.done":
+      return extractResponseText({ output: [root.item] });
+    case "response.completed":
+    case "response.incomplete":
+      return extractResponseText(root.response);
+    default:
+      return "";
+  }
+}
+
+/** 事件类型序列，连续重复的合并计数，如 response.output_text.delta×5。 */
+function summarizeEvents(events: string[]): string {
+  const parts: string[] = [];
+  let index = 0;
+  while (index < events.length) {
+    let end = index + 1;
+    while (end < events.length && events[end] === events[index]) {
+      end++;
+    }
+    const count = end - index;
+    parts.push(count > 1 ? `${events[index]}×${count}` : events[index]);
+    index = end;
+  }
+  return parts.join(" → ");
 }
 
 function extractTextFromResponseStreamEvent(payload: unknown): string {
@@ -329,7 +376,7 @@ function parseResponseStreamEvent(rawEvent: string): ProbeOutput {
     dataLines.push(data);
   }
 
-  const output: ProbeOutput = { text: "", outputTokens: null };
+  const output = emptyProbeOutput();
   if (dataLines.length === 0) {
     return output;
   }
@@ -341,9 +388,12 @@ function parseResponseStreamEvent(rawEvent: string): ProbeOutput {
     buffer.push(data);
     try {
       const event: unknown = JSON.parse(buffer.join("\n"));
+      const root = getObject(event);
       appendProbeOutput(output, {
         text: extractTextFromResponseStreamEvent(event),
+        finalText: root ? extractFinalTextFromResponseStreamEvent(root) : "",
         outputTokens: extractOutputTokens(event),
+        events: [getString(root?.type) ?? "unknown"],
       });
       buffer = [];
     } catch {
@@ -362,11 +412,11 @@ async function readOutputFromResponseStream(
   startedAt: number,
   now: () => number
 ) {
-  const output: ProbeOutput = { text: "", outputTokens: null };
+  const output = emptyProbeOutput();
   if (!response.body) {
     return {
       output,
-      rawHead: "",
+      rawTail: "",
       firstChunkLatencyMs: Math.max(0, now() - startedAt),
     };
   }
@@ -375,8 +425,8 @@ async function readOutputFromResponseStream(
   const decoder = new TextDecoder();
   let firstChunkLatencyMs: number | null = null;
   let buffer = "";
-  // 保留响应开头，可见文本为空时写入日志便于排查。
-  let rawHead = "";
+  // 保留响应末尾（收尾事件、usage 与错误都在这里），可见文本为空时写入日志。
+  let rawTail = "";
 
   while (true) {
     const { done, value } = await reader.read();
@@ -386,9 +436,7 @@ async function readOutputFromResponseStream(
 
     firstChunkLatencyMs ??= Math.max(0, now() - startedAt);
     const chunkText = decoder.decode(value, { stream: true });
-    if (rawHead.length < MAX_LOG_BODY_CHARS) {
-      rawHead += chunkText;
-    }
+    rawTail = (rawTail + chunkText).slice(-MAX_LOG_BODY_CHARS * 2);
     buffer += chunkText;
 
     let eventEndIndex = buffer.indexOf("\n\n");
@@ -407,7 +455,7 @@ async function readOutputFromResponseStream(
 
   return {
     output,
-    rawHead: rawHead.slice(0, MAX_LOG_BODY_CHARS),
+    rawTail,
     firstChunkLatencyMs: firstChunkLatencyMs ?? Math.max(0, now() - startedAt),
   };
 }
@@ -551,7 +599,7 @@ function getErrorLog(error: unknown): string {
 }
 
 function extractOutputFromSseBody(bodyText: string): ProbeOutput {
-  const output: ProbeOutput = { text: "", outputTokens: null };
+  const output = emptyProbeOutput();
   for (const rawEvent of bodyText.split(/\r?\n\r?\n/)) {
     if (rawEvent.trim()) {
       appendProbeOutput(output, parseResponseStreamEvent(rawEvent));
@@ -569,6 +617,10 @@ async function performDirectTcpRequest(
 ): Promise<{
   status: number;
   output: ProbeOutput;
+  /** 请求行与响应头，用于日志。 */
+  logPrefix: string;
+  bodyText: string;
+  /** 非 2xx 时的日志：响应头 + 响应体开头。 */
   bodyHead: string;
   latencyMs: number;
 }> {
@@ -587,7 +639,7 @@ async function performDirectTcpRequest(
   });
   const { status, head, bodyText } = response;
 
-  let output: ProbeOutput = { text: "", outputTokens: null };
+  let output = emptyProbeOutput();
   if (status >= 200 && status < 300) {
     if (response.contentType.includes("text/event-stream")) {
       output = extractOutputFromSseBody(bodyText);
@@ -613,6 +665,7 @@ async function performDirectTcpRequest(
         .join("\n")
     );
   }
+  const logPrefix = logParts.join("\n");
   const bodyForLog = bodyText.trim().slice(0, MAX_LOG_BODY_CHARS);
   if (bodyForLog) {
     logParts.push("", bodyForLog);
@@ -621,20 +674,42 @@ async function performDirectTcpRequest(
   return {
     status,
     output,
+    logPrefix,
+    bodyText,
     bodyHead: logParts.join("\n").slice(0, 2400),
     latencyMs: firstChunkLatencyMs ?? Math.max(0, now() - startedAt),
   };
 }
 
+/** 响应为空时的诊断日志：响应头、事件序列与响应体末尾。 */
+function buildEmptyResponseLog(
+  output: ProbeOutput,
+  raw: { prefix?: string; body: string }
+): string {
+  const body = raw.body.trim();
+  const parts = [
+    raw.prefix,
+    output.events.length > 0 ? `事件序列: ${summarizeEvents(output.events)}` : "",
+    body.length > MAX_LOG_BODY_CHARS
+      ? `…${body.slice(-MAX_LOG_BODY_CHARS)}`
+      : body,
+  ];
+  return parts
+    .filter((part): part is string => Boolean(part))
+    .join("\n\n")
+    .slice(-2400);
+}
+
 function buildTextCheckResult(
   config: WorkerProviderConfig,
   output: ProbeOutput,
-  rawResponse: string,
+  raw: { prefix?: string; body: string },
   latencyMs: number,
   checkedAtMs: number,
   pingLatencyMs: number | null
 ): WorkerCheckResult {
-  const hasText = validateResponse(output.text).valid;
+  const text = output.text || output.finalText;
+  const hasText = validateResponse(text).valid;
   const generatedTokens = (output.outputTokens ?? 0) > 0;
   const status: WorkerHealthStatus =
     hasText || generatedTokens
@@ -643,11 +718,11 @@ function buildTextCheckResult(
         : "operational"
       : "validation_failed";
 
-  let logMessage = output.text;
+  let logMessage = text;
   if (!hasText) {
     logMessage = generatedTokens
       ? `上游已生成 ${output.outputTokens} 个输出 token（多为推理内容，探活输出上限内未产出可见文本），按可用处理`
-      : rawResponse.trim().slice(0, MAX_LOG_BODY_CHARS);
+      : buildEmptyResponseLog(output, raw);
   }
 
   return {
@@ -710,7 +785,7 @@ export async function checkProvider(
       return buildTextCheckResult(
         config,
         direct.output,
-        direct.bodyHead,
+        { prefix: direct.logPrefix, body: direct.bodyText },
         direct.latencyMs,
         checkedAtMs,
         pingLatencyMs
@@ -757,7 +832,7 @@ export async function checkProvider(
     }
 
     let output: ProbeOutput;
-    let rawResponse: string;
+    let rawBody: string;
     if (isResponsesRequest) {
       const streamResult = await readOutputFromResponseStream(
         response,
@@ -765,17 +840,17 @@ export async function checkProvider(
         now
       );
       output = streamResult.output;
-      rawResponse = streamResult.rawHead;
+      rawBody = streamResult.rawTail;
       latencyMs = streamResult.firstChunkLatencyMs;
     } else {
-      rawResponse = await response.text();
-      output = extractProbeOutput(JSON.parse(rawResponse));
+      rawBody = await response.text();
+      output = extractProbeOutput(JSON.parse(rawBody));
     }
 
     return buildTextCheckResult(
       config,
       output,
-      rawResponse,
+      { body: rawBody },
       latencyMs,
       checkedAtMs,
       pingLatencyMs
