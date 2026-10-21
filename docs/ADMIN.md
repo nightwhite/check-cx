@@ -1,6 +1,6 @@
 # Check CX Workers Admin
 
-Workers 版本内置轻量管理台，用于维护 Provider 配置、模型、请求模板、分组、通知，并查看 Cron 运行状态。
+Workers 版本内置轻量管理台，用于维护 Provider 配置、模型、请求模板、分组、通知，查看 Cron 运行状态和检测日志。
 
 ## 本地入口
 
@@ -106,6 +106,23 @@ Cron 默认每分钟执行一次：
 
 管理台只读展示 Cron、最近 `job_runs`、当前 `job_locks`、最近 dashboard snapshot 和最近检查时间，不提供 Cron 编辑入口。调整 Cron 需要修改 `wrangler.jsonc` 后重新部署。
 
+## 检测日志
+
+后台侧边栏的「日志」页展示 `check_history` 中的最近检测结果：
+
+- 时间、渠道、监控项、模型、状态、延迟和错误消息。
+- 上游响应或错误详情（`log_message`），点击「查看」展开。
+- 支持按状态、渠道筛选，以及按监控项、模型、消息或日志内容搜索。
+- 支持分页，默认每页 100 条，单页最多 500 条。
+
+对应只读接口：
+
+```text
+GET /api/admin/logs?limit=100&offset=0&status=failed&channelId=...&q=521
+```
+
+仅管理员 session 可访问，不暴露给公开状态 API。
+
 ## 本地测试
 
 ```bash
@@ -128,3 +145,4 @@ http://127.0.0.1:8787/admin
 - Provider 配置列表不显示明文 key。
 - 替换 key dialog 不预填旧 key。
 - 运行状态页显示 `每 1 分钟`，没有 Cron 编辑控件。
+- 日志页可查看检测结果、展开 `log_message`，并可按状态筛选。

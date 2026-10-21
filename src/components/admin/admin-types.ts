@@ -27,11 +27,43 @@ export type AdminView =
   | "groups"
   | "notifications"
   | "notification-settings"
-  | "runtime";
+  | "runtime"
+  | "logs";
 
 export type AdminProviderType = "openai" | "gemini" | "anthropic";
 export type AdminApiFormat = "chat_completions" | "responses";
 export type AdminNotificationLevel = "info" | "warning" | "error";
+
+export type AdminLogStatus =
+  | "operational"
+  | "degraded"
+  | "failed"
+  | "validation_failed"
+  | "maintenance"
+  | "error";
+
+export interface AdminLogRecord {
+  id: string;
+  configId: string;
+  name: string;
+  type: AdminProviderType;
+  channelId: string | null;
+  channelName: string | null;
+  model: string;
+  status: AdminLogStatus;
+  latencyMs: number | null;
+  pingLatencyMs: number | null;
+  checkedAtMs: number;
+  message: string | null;
+  logMessage: string | null;
+}
+
+export interface AdminLogsResponse {
+  logs: AdminLogRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
 
 export interface AdminTemplateRecord {
   id: string;

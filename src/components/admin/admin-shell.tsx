@@ -3,6 +3,7 @@ import { AdminNav } from "./admin-nav";
 import { ChannelsView } from "./channels-view";
 import { ConfigsView } from "./configs-view";
 import { GroupsView } from "./groups-view";
+import { LogsView } from "./logs-view";
 import { ModelsView } from "./models-view";
 import { NotificationSettingsView } from "./notification-settings-view";
 import { NotificationsView } from "./notifications-view";
@@ -72,5 +73,7 @@ function renderView(view: AdminView, summary: AdminSummary) {
       return <NotificationSettingsView />;
     case "runtime":
       return <RuntimeView />;
+    case "logs":
+      return <LogsView />;
   }
 }

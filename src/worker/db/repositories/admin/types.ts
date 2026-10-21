@@ -15,6 +15,45 @@ export interface AdminD1Executor {
   prepare(query: string): AdminD1Statement;
 }
 
+export type AdminLogStatus =
+  | "operational"
+  | "degraded"
+  | "failed"
+  | "validation_failed"
+  | "maintenance"
+  | "error";
+
+export interface AdminLogRecord {
+  id: string;
+  configId: string;
+  name: string;
+  type: AdminProviderType;
+  channelId: string | null;
+  channelName: string | null;
+  model: string;
+  status: AdminLogStatus;
+  latencyMs: number | null;
+  pingLatencyMs: number | null;
+  checkedAtMs: number;
+  message: string | null;
+  logMessage: string | null;
+}
+
+export interface AdminLogsQuery {
+  limit: number;
+  offset: number;
+  status?: AdminLogStatus | null;
+  channelId?: string | null;
+  q?: string | null;
+}
+
+export interface AdminLogsResult {
+  logs: AdminLogRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface AdminTemplateRecord {
   id: string;
   name: string;
