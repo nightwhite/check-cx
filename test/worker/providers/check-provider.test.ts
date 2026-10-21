@@ -342,6 +342,88 @@ describe("checkProvider", () => {
     expect(result.logMessage!.length).toBeLessThanOrEqual(2400);
   });
 
+  it("treats response.failed events in a 200 stream as failed with the upstream error", async () => {
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
+        model: "gpt-5.6-terra",
+      },
+      {
+        challenge,
+        fetcher: async () =>
+          textStreamResponse([
+            'event: response.created\ndata: {"type":"response.created","response":{"status":"in_progress","output":[]}}\n\n',
+            'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":""}\n\n',
+            'event: response.output_text.done\ndata: {"type":"response.output_text.done","text":""}\n\n',
+            'event: response.metadata\ndata: {"type":"response.metadata"}\n\n',
+            'event: response.failed\ndata: {"type":"response.failed","response":{"status":"failed",' +
+              '"error":{"code":"server_error","message":"Our servers are currently overloaded. Please try again later.","type":"service_unavailable_error"}}}\n\n',
+            'event: response.failed\ndata: {"type":"response.failed","response":{"status":"failed",' +
+              '"error":{"code":"upstream_error","message":"codex upstream failed"}}}\n\n',
+          ]),
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toBe(
+      "上游返回错误：server_error: Our servers are currently overloaded. Please try again later."
+    );
+    expect(result.logMessage).toContain("response.failed×2");
+    expect(result.logMessage).toContain("codex upstream failed");
+  });
+
+  it("treats a failed stream as failed even after partial text", async () => {
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
+      },
+      {
+        challenge,
+        fetcher: async () =>
+          textStreamResponse([
+            'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n',
+            'data: {"type":"error","error":{"type":"server_error","message":"stream interrupted"}}\n\n',
+          ]),
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toBe("上游返回错误：server_error: stream interrupted");
+  });
+
+  it("treats a 200 JSON body with an error object as failed", async () => {
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () =>
+        jsonResponse({ error: { code: "upstream_error", message: "codex upstream failed" } }),
+      measurePing: async () => null,
+      now: () => 1_000,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toBe("上游返回错误：upstream_error: codex upstream failed");
+  });
+
+  it("ignores null error fields on successful replies", async () => {
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () =>
+        jsonResponse({ error: null, choices: [{ message: { content: "hi" } }] }),
+      measurePing: async () => null,
+      now: () => 1_000,
+    });
+
+    expect(result.status).toBe("operational");
+  });
+
   it("logs the raw stream when a Responses stream has no text or tokens", async () => {
     const result = await checkProvider(
       {
