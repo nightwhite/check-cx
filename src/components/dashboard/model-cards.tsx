@@ -8,13 +8,12 @@ import type {
   DashboardChannelModel,
   TimelineItem,
 } from "@/lib/types";
-import { ProviderIcon } from "@/components/provider-icon";
+import { ModelIcon } from "@/components/model-icon";
 import { cn } from "@/lib/utils";
 
 import {
   HISTORY_LEGEND,
   HISTORY_SEGMENT_COUNT,
-  PROVIDER_LABEL,
   STATUS_DOT_CLASS,
   STATUS_LABEL,
   formatDuration,
@@ -184,21 +183,21 @@ function StatusBadge({ model }: { model: DashboardChannelModel }) {
 }
 
 function ProviderMark({
-  type,
+  model,
   className,
 }: {
-  type: DashboardChannelModel["type"];
+  model: DashboardChannelModel;
   className?: string;
 }) {
   return (
     <span
-      aria-label={`${PROVIDER_LABEL[type] ?? type} provider`}
+      aria-label={`${model.model} 模型图标`}
       className={cn(
         "flex shrink-0 items-center justify-center rounded-lg bg-foreground/[0.04] ring-1 ring-inset ring-foreground/[0.08]",
         className
       )}
     >
-      <ProviderIcon type={type} size={15} className="text-foreground/75" />
+      <ModelIcon model={model.model} size={15} className="text-foreground/75" />
     </span>
   );
 }
@@ -286,7 +285,7 @@ export function ModelTile({
       )}
     >
       <div className="flex min-w-0 items-start gap-2.5">
-        <ProviderMark type={model.type} className="mt-0.5 h-7 w-7" />
+        <ProviderMark model={model} className="mt-0.5 h-7 w-7" />
         <div className="min-w-0 flex-1">
           <h3
             title={getProviderDisplayName(model.name)}
@@ -349,7 +348,7 @@ export function ModelListRow({
       )}
     >
       <div className="flex min-w-0 items-center gap-2.5">
-        <ProviderMark type={model.type} className="h-6 w-6" />
+        <ProviderMark model={model} className="h-6 w-6" />
         <div className="min-w-0">
           <h3
             title={getProviderDisplayName(model.name)}
