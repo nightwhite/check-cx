@@ -21,6 +21,8 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const DEGRADED_THRESHOLD_MS = 30_000;
 /** 探活请求的输出上限。部分上游（如 Azure）要求最小 16，32 为推理模型留出余量。 */
 const PROBE_MAX_OUTPUT_TOKENS = 32;
+/** 日志中保留的响应体字符数上限。 */
+const MAX_LOG_BODY_CHARS = 1200;
 const RESERVED_METADATA_KEYS = new Set([
   "contents",
   "generationConfig",
@@ -245,6 +247,56 @@ function extractResponseText(payload: unknown): string {
   return "";
 }
 
+/** 探活解析结果：可见文本与上游报告的输出 token 数。 */
+interface ProbeOutput {
+  text: string;
+  /** 输出 token 数（含推理 token）；上游未提供时为 null。 */
+  outputTokens: number | null;
+}
+
+/**
+ * 推理模型可能把探活输出上限全部用于思考，返回空文本；
+ * 上游报告已生成输出 token 时说明模型可用。未带 usage 但因输出上限截断时按上限计。
+ */
+function extractOutputTokens(payload: unknown): number | null {
+  const root = getObject(payload);
+  if (!root) {
+    return null;
+  }
+
+  // Responses 流的 response.completed / response.incomplete 事件把结果包在 response 字段里。
+  const body = getObject(root.response) ?? root;
+  const usage = getObject(body.usage);
+  const geminiUsage = getObject(body.usageMetadata);
+  const counts = [
+    usage?.output_tokens,
+    usage?.completion_tokens,
+    geminiUsage?.candidatesTokenCount,
+    geminiUsage?.thoughtsTokenCount,
+  ].filter((value): value is number => typeof value === "number");
+  if (counts.length > 0) {
+    return Math.max(...counts);
+  }
+
+  const truncated =
+    getObject(body.incomplete_details)?.reason === "max_output_tokens" ||
+    getObject(getArray(body.choices)[0])?.finish_reason === "length" ||
+    body.stop_reason === "max_tokens";
+  return truncated ? PROBE_MAX_OUTPUT_TOKENS : null;
+}
+
+function extractProbeOutput(payload: unknown): ProbeOutput {
+  return {
+    text: extractResponseText(payload),
+    outputTokens: extractOutputTokens(payload),
+  };
+}
+
+function appendProbeOutput(target: ProbeOutput, next: ProbeOutput) {
+  target.text += next.text;
+  target.outputTokens = next.outputTokens ?? target.outputTokens;
+}
+
 function extractTextFromResponseStreamEvent(payload: unknown): string {
   const root = getObject(payload);
   if (!root) {
@@ -263,7 +315,7 @@ function extractTextFromResponseStreamEvent(payload: unknown): string {
   return extractResponseText(root);
 }
 
-function parseResponseStreamEvent(rawEvent: string): string {
+function parseResponseStreamEvent(rawEvent: string): ProbeOutput {
   const dataLines: string[] = [];
   for (const line of rawEvent.split(/\r?\n/)) {
     if (!line.startsWith("data:")) {
@@ -277,18 +329,22 @@ function parseResponseStreamEvent(rawEvent: string): string {
     dataLines.push(data);
   }
 
+  const output: ProbeOutput = { text: "", outputTokens: null };
   if (dataLines.length === 0) {
-    return "";
+    return output;
   }
 
   // 上游代理注入 ping 心跳时会吞掉事件分隔符，同一块内可能挤进多条完整事件，
   // 因此逐行解析：单行不完整才与下一行拼接（SSE 规范的多行 data 行为）。
-  let text = "";
   let buffer: string[] = [];
   for (const data of dataLines) {
     buffer.push(data);
     try {
-      text += extractTextFromResponseStreamEvent(JSON.parse(buffer.join("\n")));
+      const event: unknown = JSON.parse(buffer.join("\n"));
+      appendProbeOutput(output, {
+        text: extractTextFromResponseStreamEvent(event),
+        outputTokens: extractOutputTokens(event),
+      });
       buffer = [];
     } catch {
       // 单行不完整：与下一行拼接后重试。
@@ -298,17 +354,19 @@ function parseResponseStreamEvent(rawEvent: string): string {
     throw new Error("Malformed Responses stream event");
   }
 
-  return text;
+  return output;
 }
 
-async function readTextFromResponseStream(
+async function readOutputFromResponseStream(
   response: Response,
   startedAt: number,
   now: () => number
 ) {
+  const output: ProbeOutput = { text: "", outputTokens: null };
   if (!response.body) {
     return {
-      text: "",
+      output,
+      rawHead: "",
       firstChunkLatencyMs: Math.max(0, now() - startedAt),
     };
   }
@@ -317,7 +375,8 @@ async function readTextFromResponseStream(
   const decoder = new TextDecoder();
   let firstChunkLatencyMs: number | null = null;
   let buffer = "";
-  let text = "";
+  // 保留响应开头，可见文本为空时写入日志便于排查。
+  let rawHead = "";
 
   while (true) {
     const { done, value } = await reader.read();
@@ -326,24 +385,29 @@ async function readTextFromResponseStream(
     }
 
     firstChunkLatencyMs ??= Math.max(0, now() - startedAt);
-    buffer += decoder.decode(value, { stream: true });
+    const chunkText = decoder.decode(value, { stream: true });
+    if (rawHead.length < MAX_LOG_BODY_CHARS) {
+      rawHead += chunkText;
+    }
+    buffer += chunkText;
 
     let eventEndIndex = buffer.indexOf("\n\n");
     while (eventEndIndex !== -1) {
       const rawEvent = buffer.slice(0, eventEndIndex);
       buffer = buffer.slice(eventEndIndex + 2);
-      text += parseResponseStreamEvent(rawEvent);
+      appendProbeOutput(output, parseResponseStreamEvent(rawEvent));
       eventEndIndex = buffer.indexOf("\n\n");
     }
   }
 
   buffer += decoder.decode();
   if (buffer.trim()) {
-    text += parseResponseStreamEvent(buffer);
+    appendProbeOutput(output, parseResponseStreamEvent(buffer));
   }
 
   return {
-    text,
+    output,
+    rawHead: rawHead.slice(0, MAX_LOG_BODY_CHARS),
     firstChunkLatencyMs: firstChunkLatencyMs ?? Math.max(0, now() - startedAt),
   };
 }
@@ -451,7 +515,7 @@ function buildHttpErrorLog(
   if (headers) {
     parts.push(headers);
   }
-  const trimmedBody = body.trim().slice(0, 1200);
+  const trimmedBody = body.trim().slice(0, MAX_LOG_BODY_CHARS);
   if (trimmedBody) {
     parts.push("", trimmedBody);
   }
@@ -486,14 +550,14 @@ function getErrorLog(error: unknown): string {
   return typeof error === "string" ? error.slice(0, 2400) : "unknown error";
 }
 
-function extractTextFromSseBody(bodyText: string): string {
-  let text = "";
+function extractOutputFromSseBody(bodyText: string): ProbeOutput {
+  const output: ProbeOutput = { text: "", outputTokens: null };
   for (const rawEvent of bodyText.split(/\r?\n\r?\n/)) {
     if (rawEvent.trim()) {
-      text += parseResponseStreamEvent(rawEvent);
+      appendProbeOutput(output, parseResponseStreamEvent(rawEvent));
     }
   }
-  return text;
+  return output;
 }
 
 async function performDirectTcpRequest(
@@ -502,7 +566,12 @@ async function performDirectTcpRequest(
   options: CheckProviderOptions,
   startedAt: number,
   now: () => number
-): Promise<{ status: number; text: string; bodyHead: string; latencyMs: number }> {
+): Promise<{
+  status: number;
+  output: ProbeOutput;
+  bodyHead: string;
+  latencyMs: number;
+}> {
   let firstChunkLatencyMs: number | null = null;
   const response = await performDirectHttpRequest({
     method: "POST",
@@ -518,15 +587,15 @@ async function performDirectTcpRequest(
   });
   const { status, head, bodyText } = response;
 
-  let text = "";
+  let output: ProbeOutput = { text: "", outputTokens: null };
   if (status >= 200 && status < 300) {
     if (response.contentType.includes("text/event-stream")) {
-      text = extractTextFromSseBody(bodyText);
+      output = extractOutputFromSseBody(bodyText);
     } else {
       try {
-        text = extractResponseText(JSON.parse(bodyText));
+        output = extractProbeOutput(JSON.parse(bodyText));
       } catch {
-        text = "";
+        // 非 JSON 响应按空文本处理，原始内容见 bodyHead。
       }
     }
   }
@@ -544,14 +613,14 @@ async function performDirectTcpRequest(
         .join("\n")
     );
   }
-  const bodyForLog = bodyText.trim().slice(0, 1200);
+  const bodyForLog = bodyText.trim().slice(0, MAX_LOG_BODY_CHARS);
   if (bodyForLog) {
     logParts.push("", bodyForLog);
   }
 
   return {
     status,
-    text,
+    output,
     bodyHead: logParts.join("\n").slice(0, 2400),
     latencyMs: firstChunkLatencyMs ?? Math.max(0, now() - startedAt),
   };
@@ -559,28 +628,38 @@ async function performDirectTcpRequest(
 
 function buildTextCheckResult(
   config: WorkerProviderConfig,
-  text: string,
+  output: ProbeOutput,
+  rawResponse: string,
   latencyMs: number,
   checkedAtMs: number,
   pingLatencyMs: number | null
 ): WorkerCheckResult {
-  const validation = validateResponse(text);
-  const status: WorkerHealthStatus = validation.valid
-    ? latencyMs > DEGRADED_THRESHOLD_MS
-      ? "degraded"
-      : "operational"
-    : "validation_failed";
+  const hasText = validateResponse(output.text).valid;
+  const generatedTokens = (output.outputTokens ?? 0) > 0;
+  const status: WorkerHealthStatus =
+    hasText || generatedTokens
+      ? latencyMs > DEGRADED_THRESHOLD_MS
+        ? "degraded"
+        : "operational"
+      : "validation_failed";
+
+  let logMessage = output.text;
+  if (!hasText) {
+    logMessage = generatedTokens
+      ? `上游已生成 ${output.outputTokens} 个输出 token（多为推理内容，探活输出上限内未产出可见文本），按可用处理`
+      : rawResponse.trim().slice(0, MAX_LOG_BODY_CHARS);
+  }
 
   return {
     ...buildBaseResult(
       config,
       status,
       checkedAtMs,
-      validation.valid ? "OK" : "响应为空"
+      status === "validation_failed" ? "响应为空" : "OK"
     ),
     latencyMs,
     pingLatencyMs,
-    logMessage: text,
+    logMessage,
   };
 }
 
@@ -630,7 +709,8 @@ export async function checkProvider(
       }
       return buildTextCheckResult(
         config,
-        direct.text,
+        direct.output,
+        direct.bodyHead,
         direct.latencyMs,
         checkedAtMs,
         pingLatencyMs
@@ -676,23 +756,26 @@ export async function checkProvider(
       };
     }
 
-    let text: string;
+    let output: ProbeOutput;
+    let rawResponse: string;
     if (isResponsesRequest) {
-      const streamResult = await readTextFromResponseStream(
+      const streamResult = await readOutputFromResponseStream(
         response,
         startedAt,
         now
       );
-      text = streamResult.text;
+      output = streamResult.output;
+      rawResponse = streamResult.rawHead;
       latencyMs = streamResult.firstChunkLatencyMs;
     } else {
-      const payload = await response.json();
-      text = extractResponseText(payload);
+      rawResponse = await response.text();
+      output = extractProbeOutput(JSON.parse(rawResponse));
     }
 
     return buildTextCheckResult(
       config,
-      text,
+      output,
+      rawResponse,
       latencyMs,
       checkedAtMs,
       pingLatencyMs
