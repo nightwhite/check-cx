@@ -528,7 +528,7 @@ describe("DashboardIsland", () => {
         .getAllByRole("link", { name: "官网" })
         .some((link) => link.getAttribute("href") === "https://status.example.com")
     ).toBe(true);
-    expect(screen.getByLabelText("OpenAI provider")).not.toBeNull();
+    expect(screen.getByLabelText("gpt-4o-mini 模型图标")).not.toBeNull();
     expect(screen.queryByText("OP")).toBeNull();
     expect(screen.queryByText("prod")).toBeNull();
     expect(screen.queryByText("su8")).toBeNull();

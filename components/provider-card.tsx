@@ -2,7 +2,7 @@
 
 import {AlertTriangle, Radio, Zap} from "lucide-react";
 
-import {ProviderIcon} from "@/components/provider-icon";
+import {ModelIcon} from "@/components/model-icon";
 import {StatusTimeline} from "@/components/status-timeline";
 import {AvailabilityStats} from "@/components/availability-stats";
 import {Badge} from "@/components/ui/badge";
@@ -97,7 +97,7 @@ export function ProviderCard({
           <div className="mt-2.5 flex items-center gap-3">
             <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-white/80 to-white/20 shadow-sm ring-1 ring-black/5 transition-transform group-hover:scale-105 dark:from-white/10 dark:to-white/5 dark:ring-white/10 sm:h-12 sm:w-12 sm:rounded-2xl">
               <div className="scale-75 sm:scale-100">
-                <ProviderIcon type={latest.type} size={26} className="text-foreground/80" />
+                <ModelIcon model={latest.model} size={26} className="text-foreground/80" />
               </div>
             </div>
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm text-muted-foreground">
