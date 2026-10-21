@@ -257,10 +257,43 @@ interface ProbeOutput {
   outputTokens: number | null;
   /** 流式事件类型序列，响应为空时写入日志便于排查。 */
   events: string[];
+  /** 上游在 200 响应内报告的错误（如 response.failed），多条时保留第一条。 */
+  error: string | null;
 }
 
 function emptyProbeOutput(): ProbeOutput {
-  return { text: "", finalText: "", outputTokens: null, events: [] };
+  return { text: "", finalText: "", outputTokens: null, events: [], error: null };
+}
+
+/** 错误描述最长字符数，避免把整段错误对象写进状态消息。 */
+const MAX_ERROR_MESSAGE_CHARS = 300;
+
+function describeErrorObject(value: unknown): string | null {
+  const error = getObject(value);
+  const message = getString(error?.message);
+  if (!error || !message) {
+    return null;
+  }
+  const code = getString(error.code) ?? getString(error.type);
+  return (code ? `${code}: ${message}` : message).slice(0, MAX_ERROR_MESSAGE_CHARS);
+}
+
+/**
+ * 上游可能以 200 返回、却在流或 JSON 里报告失败：
+ * Responses 流的 response.failed / error 事件，或 JSON 顶层的 error 对象。
+ */
+function extractUpstreamError(payload: unknown): string | null {
+  const root = getObject(payload);
+  if (!root) {
+    return null;
+  }
+  if (root.type === "response.failed") {
+    return describeErrorObject(getObject(root.response)?.error) ?? "response.failed";
+  }
+  if (root.type === "error") {
+    return describeErrorObject(root.error) ?? describeErrorObject(root) ?? "error";
+  }
+  return describeErrorObject(root.error);
 }
 
 /**
@@ -299,6 +332,7 @@ function extractProbeOutput(payload: unknown): ProbeOutput {
     ...emptyProbeOutput(),
     text: extractResponseText(payload),
     outputTokens: extractOutputTokens(payload),
+    error: extractUpstreamError(payload),
   };
 }
 
@@ -307,6 +341,7 @@ function appendProbeOutput(target: ProbeOutput, next: ProbeOutput) {
   target.finalText = next.finalText || target.finalText;
   target.outputTokens = next.outputTokens ?? target.outputTokens;
   target.events.push(...next.events);
+  target.error ??= next.error;
 }
 
 /** 部分上游不发增量事件，只在收尾事件里给出完整文本。 */
@@ -394,6 +429,7 @@ function parseResponseStreamEvent(rawEvent: string): ProbeOutput {
         finalText: root ? extractFinalTextFromResponseStreamEvent(root) : "",
         outputTokens: extractOutputTokens(event),
         events: [getString(root?.type) ?? "unknown"],
+        error: extractUpstreamError(event),
       });
       buffer = [];
     } catch {
@@ -681,8 +717,8 @@ async function performDirectTcpRequest(
   };
 }
 
-/** 响应为空时的诊断日志：响应头、事件序列与响应体末尾。 */
-function buildEmptyResponseLog(
+/** 响应为空或上游报错时的诊断日志：响应头、事件序列与响应体末尾。 */
+function buildResponseDiagnosticLog(
   output: ProbeOutput,
   raw: { prefix?: string; body: string }
 ): string {
@@ -708,6 +744,21 @@ function buildTextCheckResult(
   checkedAtMs: number,
   pingLatencyMs: number | null
 ): WorkerCheckResult {
+  // 上游以 200 返回但报告了失败：按失败处理，不论是否已输出部分文本。
+  if (output.error) {
+    return {
+      ...buildBaseResult(
+        config,
+        "failed",
+        checkedAtMs,
+        `上游返回错误：${output.error}`
+      ),
+      latencyMs,
+      pingLatencyMs,
+      logMessage: buildResponseDiagnosticLog(output, raw),
+    };
+  }
+
   const text = output.text || output.finalText;
   const hasText = validateResponse(text).valid;
   const generatedTokens = (output.outputTokens ?? 0) > 0;
@@ -722,7 +773,7 @@ function buildTextCheckResult(
   if (!hasText) {
     logMessage = generatedTokens
       ? `上游已生成 ${output.outputTokens} 个输出 token（多为推理内容，探活输出上限内未产出可见文本），按可用处理`
-      : buildEmptyResponseLog(output, raw);
+      : buildResponseDiagnosticLog(output, raw);
   }
 
   return {
