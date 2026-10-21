@@ -284,6 +284,64 @@ describe("checkProvider", () => {
     expect(result.logMessage).toContain("32 个输出 token");
   });
 
+  it("uses final text from done events when the stream has no deltas", async () => {
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
+        model: "gpt-5.6-terra",
+      },
+      {
+        challenge,
+        fetcher: async () =>
+          textStreamResponse([
+            ": keepalive\n\n",
+            'event: response.created\ndata: {"type":"response.created","response":{"status":"in_progress","output":[]}}\n\n',
+            'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"type":"message","role":"assistant","content":[]}}\n\n',
+            'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello!"}]}}\n\n',
+            'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+          ]),
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("operational");
+    expect(result.logMessage).toBe("Hello!");
+  });
+
+  it("logs the event sequence and stream tail when a long stream is empty", async () => {
+    const padding = "x".repeat(2_000);
+    const result = await checkProvider(
+      {
+        ...baseConfig,
+        endpoint: "https://api.openai.com/v1/responses",
+        apiFormat: "responses",
+        model: "gpt-5.6-terra",
+      },
+      {
+        challenge,
+        fetcher: async () =>
+          textStreamResponse([
+            `data: {"type":"response.created","response":{"status":"in_progress","instructions":"${padding}"}}\n\n`,
+            'data: {"type":"response.output_item.added","item":{"type":"message","content":[]}}\n\n',
+            'data: {"type":"response.output_item.added","item":{"type":"message","content":[]}}\n\n',
+            'data: {"type":"response.completed","response":{"status":"completed","end_marker":"tail-visible"}}\n\n',
+          ]),
+        measurePing: async () => null,
+        now: () => 1_000,
+      }
+    );
+
+    expect(result.status).toBe("validation_failed");
+    expect(result.logMessage).toContain(
+      "事件序列: response.created → response.output_item.added×2 → response.completed"
+    );
+    expect(result.logMessage).toContain("tail-visible");
+    expect(result.logMessage!.length).toBeLessThanOrEqual(2400);
+  });
+
   it("logs the raw stream when a Responses stream has no text or tokens", async () => {
     const result = await checkProvider(
       {
@@ -876,6 +934,9 @@ describe("checkProvider", () => {
     );
 
     expect(result.status).toBe("validation_failed");
+    expect(result.logMessage).toContain("Host: www.example.com");
+    expect(result.logMessage).toContain("HTTP/1.1 200 OK");
+    expect(result.logMessage).toContain('"content":""');
   });
 
   it("direct TCP mode decodes chunked SSE responses", async () => {
