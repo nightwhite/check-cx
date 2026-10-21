@@ -350,11 +350,142 @@ async function readTextFromResponseStream(
   };
 }
 
+const SENSITIVE_RESPONSE_HEADERS = new Set([
+  "set-cookie",
+  "cookie",
+  "authorization",
+  "proxy-authorization",
+  "x-api-key",
+]);
+
+function redactUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    for (const key of url.searchParams.keys()) {
+      if (/(key|token|secret|password)/i.test(key)) {
+        url.searchParams.set(key, "***");
+      }
+    }
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function formatResponseHeaders(headers: Headers): string {
+  const lines: string[] = [];
+  headers.forEach((value, key) => {
+    if (!SENSITIVE_RESPONSE_HEADERS.has(key.toLowerCase())) {
+      lines.push(`${key}: ${value}`);
+    }
+  });
+  return lines.join("\n");
+}
+
+function describeHttpStatus(status: number): string {
+  switch (status) {
+    case 400:
+      return "Provider returned HTTP 400（请求参数被上游拒绝）";
+    case 401:
+    case 403:
+      return `Provider returned HTTP ${status}（上游认证失败）`;
+    case 404:
+      return "Provider returned HTTP 404（端点或模型不存在）";
+    case 408:
+    case 524:
+      return `Provider returned HTTP ${status}（上游响应超时）`;
+    case 429:
+      return "Provider returned HTTP 429（上游限流）";
+    case 500:
+      return "Provider returned HTTP 500（上游内部错误）";
+    case 502:
+      return "Provider returned HTTP 502（上游网关错误）";
+    case 503:
+      return "Provider returned HTTP 503（上游暂不可用）";
+    case 521:
+      return "Provider returned HTTP 521（上游源站不可达）";
+    default:
+      return `Provider returned HTTP ${status}`;
+  }
+}
+
+function describeHttpStatusDetail(status: number): string {
+  switch (status) {
+    case 400:
+      return "上游拒绝了请求参数，请检查模型名、API 格式和 max_tokens 等配置。";
+    case 401:
+    case 403:
+      return "上游认证失败，请检查 API Key、权限或渠道配置。";
+    case 404:
+      return "上游找不到端点或模型，请检查 Base URL、API 格式和模型名。";
+    case 408:
+    case 524:
+      return "上游响应超时，可能是上游拥塞或网络链路问题。";
+    case 429:
+      return "上游限流，请降低检查频率或提升配额。";
+    case 500:
+      return "上游内部错误。";
+    case 502:
+      return "上游网关错误，通常是网关无法连接后端或后端提前断开连接。";
+    case 503:
+      return "上游暂不可用，常见于上游维护、限流或后端全部不可用。";
+    case 521:
+      return "Cloudflare 无法连接到上游源站（Web server is down），常见原因是上游服务宕机、端口未监听或防火墙拒绝连接。";
+    default:
+      return "";
+  }
+}
+
+function buildHttpErrorLog(
+  requestUrl: string,
+  response: Response,
+  body: string
+): string {
+  const parts = [
+    `POST ${redactUrl(requestUrl)}`,
+    `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+  ];
+  const detail = describeHttpStatusDetail(response.status);
+  if (detail) {
+    parts.push(`说明: ${detail}`);
+  }
+  const headers = formatResponseHeaders(response.headers);
+  if (headers) {
+    parts.push(headers);
+  }
+  const trimmedBody = body.trim().slice(0, 1200);
+  if (trimmedBody) {
+    parts.push("", trimmedBody);
+  }
+  return parts.join("\n").slice(0, 2400);
+}
+
+function getErrorCause(error: Error): string | null {
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+  return typeof cause === "string" ? cause : null;
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
-    return error.message;
+    const cause = getErrorCause(error);
+    return cause && cause !== error.message
+      ? `${error.message}: ${cause}`
+      : error.message;
   }
   return typeof error === "string" ? error : "unknown error";
+}
+
+function getErrorLog(error: unknown): string {
+  if (error instanceof Error) {
+    return [error.name, error.message, getErrorCause(error)]
+      .filter((item): item is string => Boolean(item))
+      .join("\n")
+      .slice(0, 2400);
+  }
+  return typeof error === "string" ? error.slice(0, 2400) : "unknown error";
 }
 
 async function openCloudflareSocket(url: URL): Promise<DirectTcpSocket> {
@@ -502,10 +633,28 @@ async function performDirectTcpRequest(
       }
     }
 
+    const logParts = [
+      `POST ${redactUrl(url.toString())} HTTP/1.1`,
+      `Host: ${config.hostHeader ?? ""}`,
+    ];
+    if (head) {
+      logParts.push(
+        "",
+        head
+          .split(/\r?\n/)
+          .filter((line) => !/^set-cookie:/i.test(line))
+          .join("\n")
+      );
+    }
+    const bodyForLog = bodyText.trim().slice(0, 1200);
+    if (bodyForLog) {
+      logParts.push("", bodyForLog);
+    }
+
     return {
       status,
       text,
-      bodyHead: bodyText.slice(0, 800),
+      bodyHead: logParts.join("\n").slice(0, 2400),
       latencyMs: firstChunkLatencyMs ?? Math.max(0, now() - startedAt),
     };
   } finally {
@@ -582,7 +731,7 @@ export async function checkProvider(
             config,
             "failed",
             checkedAtMs,
-            `Provider returned HTTP ${direct.status}`
+            describeHttpStatus(direct.status)
           ),
           latencyMs: direct.latencyMs,
           pingLatencyMs,
@@ -600,6 +749,7 @@ export async function checkProvider(
       return {
         ...buildBaseResult(config, "failed", checkedAtMs, getErrorMessage(error)),
         pingLatencyMs,
+        logMessage: getErrorLog(error),
       };
     }
   }
@@ -612,7 +762,8 @@ export async function checkProvider(
   const isResponsesRequest = config.apiFormat === "responses";
 
   try {
-    const response = await fetcher(buildRequestUrl(config), {
+    const requestUrl = buildRequestUrl(config);
+    const response = await fetcher(requestUrl, {
       method: "POST",
       headers: buildHeaders(config),
       body: JSON.stringify(buildRequestBody(config, challenge)),
@@ -622,17 +773,16 @@ export async function checkProvider(
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => "");
-      const logMessage = errorBody.trim().slice(0, 800);
       return {
         ...buildBaseResult(
           config,
           "failed",
           checkedAtMs,
-          `Provider returned HTTP ${response.status}`
+          describeHttpStatus(response.status)
         ),
         latencyMs,
         pingLatencyMs,
-        ...(logMessage ? { logMessage } : {}),
+        logMessage: buildHttpErrorLog(requestUrl, response, errorBody),
       };
     }
 
@@ -666,6 +816,7 @@ export async function checkProvider(
         getErrorMessage(error)
       ),
       pingLatencyMs,
+      logMessage: getErrorLog(error),
     };
   } finally {
     clearTimeout(timeout);

@@ -140,7 +140,59 @@ describe("checkProvider", () => {
 
     expect(result.status).toBe("failed");
     expect(result.message).toContain("500");
-    expect(result.logMessage).toContain("bad");
+    expect(result.message).toContain("上游内部错误");
+    expect(result.logMessage).toContain(
+      "POST https://api.openai.com/v1/chat/completions"
+    );
+    expect(result.logMessage).toContain("HTTP 500");
+    expect(result.logMessage).toContain("content-type: application/json");
+    expect(result.logMessage).toContain('{"error":"bad"}');
+  });
+
+  it("explains upstream 521 errors and captures response headers", async () => {
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () =>
+        new Response("error code: 521", {
+          status: 521,
+          headers: {
+            "content-type": "text/plain",
+            "cf-ray": "test-ray",
+            "set-cookie": "should-not-appear",
+          },
+        }),
+      measurePing: async () => null,
+      now: () => 1_000,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("521");
+    expect(result.message).toContain("上游源站不可达");
+    expect(result.logMessage).toContain("HTTP 521");
+    expect(result.logMessage).toContain("cf-ray: test-ray");
+    expect(result.logMessage).toContain("error code: 521");
+    expect(result.logMessage).toContain("Cloudflare 无法连接到上游源站");
+    expect(result.logMessage).not.toContain("set-cookie");
+  });
+
+  it("includes the underlying cause when fetch fails", async () => {
+    const result = await checkProvider(baseConfig, {
+      challenge,
+      fetcher: async () => {
+        const error = new Error("fetch failed");
+        (error as Error & { cause?: unknown }).cause = new Error(
+          "connect ECONNREFUSED"
+        );
+        throw error;
+      },
+      measurePing: async () => null,
+      now: () => 1_000,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("fetch failed");
+    expect(result.message).toContain("ECONNREFUSED");
+    expect(result.logMessage).toContain("ECONNREFUSED");
   });
 
   it("returns validation_failed when provider response is empty", async () => {

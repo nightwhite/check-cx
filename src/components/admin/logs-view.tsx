@@ -309,7 +309,7 @@ function LogDetails({ text }: { text: string | null }) {
       <summary className="cursor-pointer text-xs font-medium text-primary">
         查看
       </summary>
-      <pre className="mt-2 max-h-48 max-w-md overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2 text-xs">
+      <pre className="mt-2 max-h-64 max-w-md overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2 text-xs">
         {text}
       </pre>
     </details>
