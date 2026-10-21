@@ -1,6 +1,7 @@
 export { createAdminChannelRepository } from "./channels";
 export { createAdminConfigRepository } from "./configs";
 export { createAdminGroupRepository } from "./groups";
+export { createAdminLogRepository } from "./logs";
 export { createAdminModelRepository } from "./models";
 export { createAdminNotificationRepository } from "./notifications";
 export {

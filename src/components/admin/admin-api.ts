@@ -3,6 +3,7 @@ import type {
   AdminChannelRecord,
   AdminGroupRecord,
   AdminImportModelsResult,
+  AdminLogsResponse,
   AdminModelRecord,
   AdminNotificationRecord,
   AdminNotificationSettingsRecord,
@@ -397,5 +398,38 @@ export async function updateAdminSiteSettings(
   return requestJson<AdminSiteSettingsRecord>(
     "/api/admin/site-settings",
     jsonInit("PUT", payload)
+  );
+}
+
+export interface AdminLogsQuery {
+  limit?: number;
+  offset?: number;
+  status?: string | null;
+  channelId?: string | null;
+  q?: string | null;
+}
+
+export async function listAdminLogs(
+  query: AdminLogsQuery = {}
+): Promise<AdminLogsResponse> {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) {
+    params.set("limit", String(query.limit));
+  }
+  if (query.offset !== undefined) {
+    params.set("offset", String(query.offset));
+  }
+  if (query.status) {
+    params.set("status", query.status);
+  }
+  if (query.channelId) {
+    params.set("channelId", query.channelId);
+  }
+  if (query.q) {
+    params.set("q", query.q);
+  }
+  const suffix = params.toString();
+  return requestJson<AdminLogsResponse>(
+    `/api/admin/logs${suffix ? `?${suffix}` : ""}`
   );
 }

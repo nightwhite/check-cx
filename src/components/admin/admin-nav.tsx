@@ -1,6 +1,7 @@
 import {
   Bell,
   Boxes,
+  FileText,
   Gauge,
   Layers3,
   LayoutTemplate,
@@ -28,6 +29,7 @@ const navItems: Array<{
   { value: "notifications", label: "通知", icon: Bell },
   { value: "notification-settings", label: "通知设置", icon: Bell },
   { value: "runtime", label: "运行状态", icon: Waypoints },
+  { value: "logs", label: "日志", icon: FileText },
 ];
 
 interface AdminNavProps {
