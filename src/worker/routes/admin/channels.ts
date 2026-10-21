@@ -15,8 +15,16 @@ import {
   requiredString,
 } from "./validation";
 
+// 内网地址常省略协议（如 10.0.0.5:3000），未写协议时按 http:// 处理。
 function optionalBaseUrl(body: Record<string, unknown>) {
-  const value = optionalHttpUrl(body, "baseUrl", "API Base URL");
+  const raw = optionalString(body, "baseUrl");
+  const normalized =
+    raw && !/^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? `http://${raw}` : raw;
+  const value = optionalHttpUrl(
+    { baseUrl: normalized },
+    "baseUrl",
+    "API Base URL"
+  );
   return value ? value.replace(/\/+$/g, "") : null;
 }
 

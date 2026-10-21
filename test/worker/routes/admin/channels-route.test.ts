@@ -99,6 +99,45 @@ describe("admin channels route", () => {
     });
   });
 
+  it.each([
+    ["http://10.0.0.5:3000/", "http://10.0.0.5:3000"],
+    ["192.168.1.10:8080/v1", "http://192.168.1.10:8080/v1"],
+    ["localhost:3000", "http://localhost:3000"],
+  ])("accepts http intranet base url %s", async (input, expected) => {
+    const { app, env, cookie } = await setup();
+
+    const response = await app.request(
+      "http://example.com/api/admin/channels",
+      jsonRequest("POST", cookie, {
+        name: "Intranet Relay",
+        baseUrl: input,
+        sortOrder: 10,
+        enabled: true,
+      }),
+      env
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({ baseUrl: expected });
+  });
+
+  it("rejects non-http base url schemes", async () => {
+    const { app, env, cookie } = await setup();
+
+    const response = await app.request(
+      "http://example.com/api/admin/channels",
+      jsonRequest("POST", cookie, {
+        name: "Bad Relay",
+        baseUrl: "ftp://10.0.0.5",
+        sortOrder: 10,
+        enabled: true,
+      }),
+      env
+    );
+
+    expect(response.status).toBe(400);
+  });
+
   it("rejects duplicate channel names", async () => {
     const { app, env, cookie } = await setup();
     const payload = {
