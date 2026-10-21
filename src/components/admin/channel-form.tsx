@@ -124,13 +124,14 @@ export function ChannelForm({
           <div className="grid gap-1">
             <p className="text-sm font-medium">API 信息</p>
             <p className="text-xs text-muted-foreground">
-              监控项留空端点 / Key 时继承这里的配置，端点按 API 格式自动拼接 /v1/...
+              监控项留空端点 / Key 时继承这里的配置，端点按 API 格式自动拼接 /v1/...；
+              支持 http 内网地址，未写协议时按 http:// 处理
             </p>
           </div>
           <Field label="API Base URL">
             <TextInput
               value={baseUrl}
-              placeholder="https://api.example.com"
+              placeholder="https://api.example.com 或 http://10.0.0.5:3000"
               onChange={(event) => setBaseUrl(event.target.value)}
             />
           </Field>
