@@ -9,6 +9,16 @@ import "../styles/global.css";
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script is:inline>
+      // 被其他站点以 iframe 内嵌时标记根元素，样式据此隐藏文档滚动条（滚动仍可用）。
+      (function () {
+        try {
+          if (window.self !== window.top) {
+            document.documentElement.setAttribute("data-embedded", "");
+          }
+        } catch (error) {
+          document.documentElement.setAttribute("data-embedded", "");
+        }
+      })();
       (function () {
         var media = window.matchMedia
           ? window.matchMedia("(prefers-color-scheme: dark)")

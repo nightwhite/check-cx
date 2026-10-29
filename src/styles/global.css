@@ -14,6 +14,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* 内嵌在其他站点的 iframe 里时隐藏文档滚动条，避免与宿主页面叠出两条；滚轮与触控仍可滚动 */
+html[data-embedded] {
+  scrollbar-width: none;
+}
+
+html[data-embedded]::-webkit-scrollbar {
+  display: none;
+}
+
 /* 键盘操作时给所有可交互元素一个清晰的焦点环 */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--ring);
