@@ -1034,8 +1034,19 @@ export function DashboardIsland() {
           : "检查中…";
 
   const allVisibleChannels = useMemo(
-    () => (data?.channels ?? []).filter((channel) => channel.models.length > 0),
-    [data]
+    () =>
+      (data?.channels ?? [])
+        .filter((channel) => {
+          if (channelFilter.length === 0) {
+            return true;
+          }
+          return (
+            channelFilter.includes(channel.id.toLowerCase()) ||
+            channelFilter.includes(channel.name.toLowerCase())
+          );
+        })
+        .filter((channel) => channel.models.length > 0),
+    [channelFilter, data]
   );
   const siteName = data?.site?.siteName ?? "Status";
   const showProviderFilter =
