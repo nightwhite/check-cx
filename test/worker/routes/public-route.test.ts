@@ -540,4 +540,135 @@ describe("public status routes", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(browserState.launch).not.toHaveBeenCalled();
   });
+
+  it("filters public status JSON down to one channel", async () => {
+    const app = createWorkerApp();
+    const env = createEnv(
+      createDb({
+        payload_json: JSON.stringify(createSnapshotPayload()),
+        etag: "\"dashboard-etag\"",
+        generated_at_ms: 1_779_235_260_000,
+      })
+    );
+
+    const response = await app.request(
+      "https://status.example.com/api/public/status?period=7d&channels=channel-openai",
+      {},
+      env
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      overallStatus: string;
+      summary: Record<string, number>;
+      channels: Array<{ id: string }>;
+    };
+    expect(payload.channels.map((channel) => channel.id)).toEqual([
+      "channel-openai",
+    ]);
+    expect(payload.summary).toEqual({
+      total: 1,
+      operational: 1,
+      degraded: 0,
+      failed: 0,
+      maintenance: 0,
+      unknown: 0,
+    });
+    expect(payload.overallStatus).toBe("operational");
+  });
+
+  it("accepts channel names case-insensitively and multiple channels", async () => {
+    const app = createWorkerApp();
+    const env = createEnv(
+      createDb({
+        payload_json: JSON.stringify(createSnapshotPayload()),
+        etag: "\"dashboard-etag\"",
+        generated_at_ms: 1_779_235_260_000,
+      })
+    );
+
+    const response = await app.request(
+      "https://status.example.com/api/public/status?period=7d&channels=google%20ai%20studio,channel-openai",
+      {},
+      env
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      summary: Record<string, number>;
+      channels: Array<{ id: string }>;
+    };
+    expect(payload.channels.map((channel) => channel.id)).toEqual([
+      "channel-google",
+      "channel-openai",
+    ]);
+    expect(payload.summary.total).toBe(2);
+  });
+
+  it("rejects unknown channel filters", async () => {
+    const app = createWorkerApp();
+    const env = createEnv(
+      createDb({
+        payload_json: JSON.stringify(createSnapshotPayload()),
+        etag: "\"dashboard-etag\"",
+        generated_at_ms: 1_779_235_260_000,
+      })
+    );
+
+    const response = await app.request(
+      "https://status.example.com/api/public/status?period=7d&channels=not-a-channel",
+      {},
+      env
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "unknown_channel:not-a-channel",
+    });
+  });
+
+  it("renders the screenshot with a channels query", async () => {
+    const app = createWorkerApp();
+    const env = createEnv(
+      createDb({
+        payload_json: JSON.stringify(createSnapshotPayload()),
+        etag: "\"dashboard-etag\"",
+        generated_at_ms: 1_779_235_260_000,
+      })
+    );
+
+    const response = await app.request(
+      "https://status.example.com/api/public/status-card.png?period=7d&channels=channel-google",
+      {},
+      env
+    );
+
+    expect(response.status).toBe(200);
+    expect(browserState.calls.goto).toBe(
+      "https://status.example.com/?period=7d&screenshot=1&channels=channel-google"
+    );
+  });
+
+  it("rejects screenshot requests with unknown channels", async () => {
+    const app = createWorkerApp();
+    const env = createEnv(
+      createDb({
+        payload_json: JSON.stringify(createSnapshotPayload()),
+        etag: "\"dashboard-etag\"",
+        generated_at_ms: 1_779_235_260_000,
+      })
+    );
+
+    const response = await app.request(
+      "https://status.example.com/api/public/status-card.png?period=7d&channels=nope",
+      {},
+      env
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "unknown_channel:nope",
+    });
+    expect(browserState.launch).not.toHaveBeenCalled();
+  });
 });

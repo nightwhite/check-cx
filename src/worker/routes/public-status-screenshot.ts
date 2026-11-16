@@ -21,19 +21,27 @@ export function normalizePublicOrigin(value: string | undefined): string | null 
   }
 }
 
-export function buildDashboardScreenshotUrl(origin: string, period: TrendPeriod): string {
+export function buildDashboardScreenshotUrl(
+  origin: string,
+  period: TrendPeriod,
+  channels: string[] = []
+): string {
   const url = new URL(origin);
   url.pathname = "/";
   url.search = "";
   url.searchParams.set("period", period);
   url.searchParams.set("screenshot", "1");
+  if (channels.length > 0) {
+    url.searchParams.set("channels", channels.join(","));
+  }
   return url.toString();
 }
 
 export async function renderPublicStatusScreenshotPng(
   browserBinding: BrowserWorker,
   publicOrigin: string,
-  period: TrendPeriod
+  period: TrendPeriod,
+  channels: string[] = []
 ): Promise<Uint8Array> {
   const browser = await launch(browserBinding);
 
@@ -45,7 +53,7 @@ export async function renderPublicStatusScreenshotPng(
     await page.setExtraHTTPHeaders({
       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     });
-    await page.goto(buildDashboardScreenshotUrl(publicOrigin, period), {
+    await page.goto(buildDashboardScreenshotUrl(publicOrigin, period, channels), {
       waitUntil: "domcontentloaded",
     });
     await page.waitForSelector(SCREENSHOT_READY_SELECTOR, { timeout: 10_000 });
