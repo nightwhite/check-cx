@@ -131,6 +131,28 @@ function getInitialChannel() {
   return new URLSearchParams(window.location.search).get("channel") || ALL_CHANNELS;
 }
 
+// 支持 ?channels=id1,id2 只渲染指定渠道，用于状态截图等场景
+function getInitialChannels(): string[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  const raw = new URLSearchParams(window.location.search).get("channels");
+  if (!raw) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const part of raw.split(",")) {
+    const value = part.trim().toLowerCase();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
 // 只同步 URL，不触发页面刷新，方便分享指定渠道的链接
 function syncChannelToUrl(channelId: string) {
   try {
@@ -830,6 +852,7 @@ export function DashboardIsland() {
   const [query, setQuery] = useState("");
   const [providerFamily, setProviderFamily] = useState(getInitialProviderFamily);
   const [activeChannel, setActiveChannel] = useState(getInitialChannel);
+  const [channelFilter] = useState<string[]>(getInitialChannels);
   const [collapsedChannels, setCollapsedChannels] = useState<Set<string>>(
     readCollapsedChannels
   );
@@ -941,6 +964,15 @@ export function DashboardIsland() {
   }, [providerFamilies, providerFamily]);
   const filteredChannels = useMemo(() => {
     return (data?.channels ?? [])
+      .filter((channel) => {
+        if (channelFilter.length === 0) {
+          return true;
+        }
+        return (
+          channelFilter.includes(channel.id.toLowerCase()) ||
+          channelFilter.includes(channel.name.toLowerCase())
+        );
+      })
       .map((channel) => ({
         ...channel,
         models: channel.models
@@ -960,7 +992,7 @@ export function DashboardIsland() {
           ),
       }))
       .filter((channel) => channel.models.length > 0);
-  }, [activeProviderFamily, data, query]);
+  }, [activeProviderFamily, channelFilter, data, query]);
   // 指定的渠道不在当前结果中时（被筛掉或已下线）回退为全部渠道
   const effectiveChannel = filteredChannels.some(
     (channel) => channel.id === activeChannel
