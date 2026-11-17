@@ -71,6 +71,57 @@ function buildBaseResult(
   };
 }
 
+/**
+ * 官方 Claude Code 客户端指纹请求头。
+ *
+ * 部分上游中转（如 su8.codes）要求 Anthropic 请求看起来由官方
+ * Claude Code CLI 发出，否则拒绝（Upstream access forbidden）。经抓包确认，
+ * 真实 api.anthropic.com 也接受这些头（它们正是官方客户端实际发送的），
+ * 因此对 anthropic 探活默认带上是安全的。校验关注：
+ * - user-agent 以 claude-cli/ 开头
+ * - x-app: cli
+ * - anthropic-beta 含 claude-code-20250219
+ * - 至少一个 x-stainless-* 头
+ * 用户可通过配置的 requestHeaders 覆盖这些默认值。
+ */
+const ANTHROPIC_OFFICIAL_CLIENT_HEADERS: Record<string, string> = {
+  "user-agent": "claude-cli/2.1.326 (external, cli)",
+  "x-app": "cli",
+  "anthropic-beta":
+    "claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+  "anthropic-dangerous-direct-browser-access": "true",
+  "x-stainless-lang": "js",
+  "x-stainless-package-version": "0.128.0",
+  "x-stainless-os": "Linux",
+  "x-stainless-arch": "x64",
+  "x-stainless-runtime": "node",
+  "x-stainless-runtime-version": "v22.0.0",
+  "x-stainless-retry-count": "0",
+  "x-stainless-timeout": "600",
+};
+
+/** 稳定的设备标识（内容不参与校验，仅需形如官方 user_id 的 JSON）。 */
+const ANTHROPIC_PROBE_DEVICE_ID =
+  "0000000000000000000000000000000000000000000000000000000000000000";
+
+/**
+ * 官方客户端 system 提示（数组形式的 text block）。上游要求 system 为
+ * 数组形式存在，纯字符串会被拒绝；内容本身不参与校验。
+ */
+const ANTHROPIC_PROBE_SYSTEM = [
+  { type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." },
+];
+
+function buildAnthropicProbeMetadata(): { user_id: string } {
+  return {
+    user_id: JSON.stringify({
+      device_id: ANTHROPIC_PROBE_DEVICE_ID,
+      account_uuid: "",
+      session_id: crypto.randomUUID(),
+    }),
+  };
+}
+
 function buildHeaders(config: WorkerProviderConfig): Headers {
   const headers = new Headers();
   headers.set("content-type", "application/json");
@@ -78,6 +129,10 @@ function buildHeaders(config: WorkerProviderConfig): Headers {
   if (config.type === "anthropic") {
     headers.set("x-api-key", config.apiKey);
     headers.set("anthropic-version", "2023-06-01");
+    // 伪装为官方 Claude Code 客户端，满足上游中转的来源校验。
+    for (const [key, value] of Object.entries(ANTHROPIC_OFFICIAL_CLIENT_HEADERS)) {
+      headers.set(key, value);
+    }
   } else if (config.type === "openai" || isOpenAICompatibleGemini(config)) {
     headers.set("authorization", `Bearer ${config.apiKey}`);
   }
@@ -114,7 +169,11 @@ function buildRequestBody(config: WorkerProviderConfig, challenge: Challenge) {
   const { modelId } = parseModelId(config.model);
 
   if (config.type === "anthropic") {
+    // system 与 metadata.user_id 是官方客户端指纹的一部分，部分上游会校验。
+    // 用户配置的 metadata 优先级更高，可覆盖默认探活身份。
     return {
+      system: ANTHROPIC_PROBE_SYSTEM,
+      metadata: buildAnthropicProbeMetadata(),
       ...metadata,
       model: modelId,
       max_tokens: PROBE_MAX_OUTPUT_TOKENS,
