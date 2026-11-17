@@ -2,12 +2,15 @@ import * as React from "react";
 
 import { Button } from "../../../components/ui/button";
 import { Dialog } from "../../../components/ui/dialog";
+import { Select } from "../../../components/ui/select";
 import { Field, TextInput } from "./form-fields";
 import type { AdminChannelRecord } from "./admin-types";
 
 interface ChannelFormProps {
   open: boolean;
   record: AdminChannelRecord | null;
+  /** 已有渠道列表，用于「从其他渠道复制」配置。 */
+  channels?: AdminChannelRecord[];
   saving: boolean;
   serverError: string | null;
   onOpenChange(open: boolean): void;
@@ -17,6 +20,7 @@ interface ChannelFormProps {
 export function ChannelForm({
   open,
   record,
+  channels = [],
   saving,
   serverError,
   onOpenChange,
@@ -33,6 +37,7 @@ export function ChannelForm({
   const [sortOrder, setSortOrder] = React.useState("0");
   const [enabled, setEnabled] = React.useState(true);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [copyNotice, setCopyNotice] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!open) {
@@ -49,7 +54,31 @@ export function ChannelForm({
     setSortOrder(String(record?.sortOrder ?? 0));
     setEnabled(record?.enabled ?? true);
     setErrors({});
+    setCopyNotice(null);
   }, [open, record]);
+
+  // 可作为复制来源的渠道：排除正在编辑的当前渠道。
+  const copySources = channels.filter((channel) => channel.id !== record?.id);
+
+  function handleCopyFrom(sourceId: string) {
+    const source = copySources.find((channel) => channel.id === sourceId);
+    if (!source) {
+      return;
+    }
+    // 仅复制红框内的展示 / API 配置字段，不动渠道名称、排序、启用状态。
+    // API Key 为敏感信息，后端不返回明文，无法复制，需另行填写。
+    setLogoUrl(source.logoUrl ?? "");
+    setWebsiteUrl(source.websiteUrl ?? "");
+    setStatusPageUrl(source.statusPageUrl ?? "");
+    setBaseUrl(source.baseUrl ?? "");
+    setHostHeader(source.hostHeader ?? "");
+    setErrors((current) => ({ ...current, hostHeader: "" }));
+    setCopyNotice(
+      source.hasApiKey
+        ? `已复制「${source.name}」的配置，API Key 需另行填写`
+        : `已复制「${source.name}」的配置`
+    );
+  }
 
   function handleSubmit() {
     const nextErrors: Record<string, string> = {};
@@ -126,6 +155,24 @@ export function ChannelForm({
             />
           </Field>
         </div>
+        {copySources.length > 0 ? (
+          <Field label="从其他渠道复制">
+            <Select
+              value=""
+              onChange={(event) => handleCopyFrom(event.target.value)}
+            >
+              <option value="">选择渠道以复制其配置…</option>
+              {copySources.map((channel) => (
+                <option key={channel.id} value={channel.id}>
+                  {channel.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+        {copyNotice ? (
+          <p className="-mt-2 text-xs text-muted-foreground">{copyNotice}</p>
+        ) : null}
         <div className="grid gap-4 rounded-md border border-border/70 p-3">
           <div className="grid gap-1">
             <p className="text-sm font-medium">API 信息</p>
