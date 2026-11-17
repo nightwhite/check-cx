@@ -200,6 +200,7 @@ export function ChannelsView() {
       <ChannelForm
         open={formOpen}
         record={editing}
+        channels={records}
         saving={saving}
         serverError={formError}
         onOpenChange={setFormOpen}
