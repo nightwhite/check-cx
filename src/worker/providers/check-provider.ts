@@ -105,10 +105,20 @@ const ANTHROPIC_PROBE_DEVICE_ID =
   "0000000000000000000000000000000000000000000000000000000000000000";
 
 /**
- * 官方客户端 system 提示（数组形式的 text block）。上游要求 system 为
- * 数组形式存在，纯字符串会被拒绝；内容本身不参与校验。
+ * 官方客户端 system 提示（数组形式的 text block）。
+ *
+ * 部分上游（如 su8.codes）会校验请求是否「Claude Code shaped」，要求：
+ * - system 为数组形式（纯字符串会被拒绝）
+ * - system[0] 必须是携带字段的 `x-anthropic-billing-header` block
+ *   （仅有前缀、无 cc_version / cc_entrypoint 字段会被拒绝）
+ * 该 billing block 正是官方 Claude Code 客户端实际发送的，真实
+ * api.anthropic.com 同样接受，故默认带上是安全的。
  */
 const ANTHROPIC_PROBE_SYSTEM = [
+  {
+    type: "text",
+    text: "x-anthropic-billing-header: cc_version=2.1.316.9bc; cc_entrypoint=cli;",
+  },
   { type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." },
 ];
 
